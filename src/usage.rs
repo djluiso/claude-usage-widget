@@ -367,7 +367,7 @@ impl Store {
         }
         let active = sessions.values().filter(|s| s.active).count();
         let mut sessions: Vec<Session> = sessions.into_values().collect();
-        sessions.sort_by(|a, b| b.last.cmp(&a.last));
+        sessions.sort_by_key(|s| std::cmp::Reverse(s.last)); // newest first
         let mut models: Vec<Model> = models
             .into_iter()
             .map(|(name, cost)| Model { name, cost })

@@ -348,7 +348,7 @@ impl<'a> Canvas<'a> {
     /// Premultiplied BGRA bytes for UpdateLayeredWindow.
     pub fn to_bgra(&self, min_alpha: u8) -> Vec<u8> {
         let mut out = self.pm.data().to_vec();
-        for px in out.chunks_exact_mut(4) {
+        for px in out.as_chunks_mut::<4>().0 {
             px.swap(0, 2);
             if px[3] < min_alpha {
                 px[3] = min_alpha;
