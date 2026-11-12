@@ -36,6 +36,8 @@ const PRICES_H: f32 = 84.0 + PRICE_ROWS.len() as f32 * PRICE_ROW_H + 32.0;
 /// Where the "tip" links in Settings go.
 pub(crate) const TIP_KOFI: &str = "https://ko-fi.com/djlou";
 pub(crate) const TIP_SOCIABUZZ: &str = "https://sociabuzz.com/djlou/tribe";
+/// The README's Support section, which shows the Bitcoin address to copy.
+pub(crate) const TIP_BITCOIN: &str = "https://github.com/djluiso/claude-usage-widget#support";
 
 /// "$4.00", "$0.20", "$0.125"
 fn fmt_price(v: f64) -> String {
@@ -249,10 +251,14 @@ pub(crate) fn draw_settings(
     c.text(x + 4.0, ly, label, 11.0, th.accent, R, "lm");
     hits.push(([x, ly - 11.0, tw + 8.0, 22.0], Hit::OpenTranscripts));
     // tip links, in the middle
-    let tips: [(&str, &str); 2] = [("Ko-fi", TIP_KOFI), ("SociaBuzz", TIP_SOCIABUZZ)];
+    let tips: [(&str, &str); 3] = [
+        ("Ko-fi", TIP_KOFI),
+        ("SociaBuzz", TIP_SOCIABUZZ),
+        ("Bitcoin", TIP_BITCOIN),
+    ];
     let lead = "Enjoying it? Tip on";
     let widths: Vec<f32> = tips.iter().map(|(l, _)| c.tw(l, 11.0, SB)).collect();
-    let total = c.tw(lead, 11.0, R) + 8.0 + widths.iter().sum::<f32>() + 18.0;
+    let total = c.tw(lead, 11.0, R) + 8.0 + widths.iter().sum::<f32>() + 18.0 * 2.0;
     let mut tx = x + w / 2.0 - total / 2.0;
     c.text(tx, ly, lead, 11.0, th.text3, R, "lm");
     tx += c.tw(lead, 11.0, R) + 8.0;

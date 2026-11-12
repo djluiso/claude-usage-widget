@@ -15,6 +15,7 @@ runtime to install.
 <p align="center">
   <a href="https://ko-fi.com/djlou"><img src="https://img.shields.io/badge/Ko--fi-Buy%20me%20a%20coffee-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white" alt="Support me on Ko-fi"></a>
   <a href="https://sociabuzz.com/djlou/tribe"><img src="https://img.shields.io/badge/SociaBuzz-Send%20a%20tip-2DA44E?style=for-the-badge" alt="Send a tip on SociaBuzz"></a>
+  <a href="#support"><img src="https://img.shields.io/badge/Bitcoin-Send%20BTC-F7931A?style=for-the-badge&logo=bitcoin&logoColor=white" alt="Send Bitcoin"></a>
 </p>
 
 <p align="center">
@@ -360,8 +361,13 @@ The widget is free. If it's useful to you, you can leave a tip:
 
 - [Ko-fi](https://ko-fi.com/djlou)
 - [SociaBuzz](https://sociabuzz.com/djlou/tribe)
+- Bitcoin (BTC, native SegWit). Send only Bitcoin on the Bitcoin network to this address:
 
-The same links are at the bottom of the widget's **Settings**.
+  ```
+  bc1q6f9lxewcel7exww5vxxk95y08ymlutzx0ldcms
+  ```
+
+The same links are at the bottom of the widget's **Settings**. **Bitcoin** opens this section, so you can copy the address.
 
 ## How it works
 
