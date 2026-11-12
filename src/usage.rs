@@ -27,7 +27,10 @@ impl Rec {
     }
     fn cost(&self, cfg: &Config) -> f64 {
         let p = cfg.price_for(&self.model);
-        (self.inp as f64 * p[0] + self.out as f64 * p[1] + self.cw as f64 * p[2] + self.cr as f64 * p[3])
+        (self.inp as f64 * p[0]
+            + self.out as f64 * p[1]
+            + self.cw as f64 * p[2]
+            + self.cr as f64 * p[3])
             / 1e6
     }
 }
@@ -94,7 +97,8 @@ pub struct Stats {
 
 impl Stats {
     pub fn live(&self) -> bool {
-        self.last.map_or(false, |l| (self.now - l).num_seconds() < 120)
+        self.last
+            .is_some_and(|l| (self.now - l).num_seconds() < 120)
     }
 }
 
@@ -108,12 +112,14 @@ pub struct Store {
 }
 
 fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
     for e in rd.flatten() {
         let p = e.path();
         match e.file_type() {
             Ok(ft) if ft.is_dir() => walk(&p, out),
-            Ok(_) if p.extension().map_or(false, |x| x == "jsonl") => out.push(p),
+            Ok(_) if p.extension().is_some_and(|x| x == "jsonl") => out.push(p),
             _ => {}
         }
     }
@@ -121,19 +127,31 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
 
 impl Store {
     pub fn new(root: PathBuf) -> Self {
-        Self { root, ..Default::default() }
+        Self {
+            root,
+            ..Default::default()
+        }
     }
 
     fn ids(&self, path: &Path) -> (String, String) {
         let rel: Vec<String> = path
             .strip_prefix(&self.root)
-            .map(|r| r.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect())
+            .map(|r| {
+                r.components()
+                    .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                    .collect()
+            })
             .unwrap_or_default();
         if rel.len() > 1 {
-            let sess = Path::new(&rel[1]).file_stem().map(|s| s.to_string_lossy().into_owned());
+            let sess = Path::new(&rel[1])
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned());
             (rel[0].clone(), sess.unwrap_or_default())
         } else {
-            let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            let stem = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
             ("?".into(), stem)
         }
     }
@@ -142,7 +160,9 @@ impl Store {
         let mut files = Vec::new();
         walk(&self.root, &mut files);
         for path in files {
-            let Ok(meta) = std::fs::metadata(&path) else { continue };
+            let Ok(meta) = std::fs::metadata(&path) else {
+                continue;
+            };
             let (proj, sess) = self.ids(&path);
             if let Ok(m) = meta.modified() {
                 let e = self.session_mtime.entry(sess.clone()).or_insert(m);
@@ -159,7 +179,9 @@ impl Store {
             if size == off {
                 continue;
             }
-            let Ok(mut f) = std::fs::File::open(&path) else { continue };
+            let Ok(mut f) = std::fs::File::open(&path) else {
+                continue;
+            };
             if f.seek(SeekFrom::Start(off)).is_err() {
                 continue;
             }
@@ -185,14 +207,20 @@ impl Store {
         if !line.windows(7).any(|w| w == b"\"usage\"") {
             return;
         }
-        let Ok(v) = serde_json::from_slice::<serde_json::Value>(line) else { return };
+        let Ok(v) = serde_json::from_slice::<serde_json::Value>(line) else {
+            return;
+        };
         let msg = &v["message"];
         let usage = &msg["usage"];
-        let Some(ts) = v["timestamp"].as_str() else { return };
+        let Some(ts) = v["timestamp"].as_str() else {
+            return;
+        };
         if !usage.is_object() {
             return;
         }
-        let Ok(t) = DateTime::parse_from_rfc3339(ts) else { return };
+        let Ok(t) = DateTime::parse_from_rfc3339(ts) else {
+            return;
+        };
         let n = |k: &str| usage[k].as_u64().unwrap_or(0);
         let key = match msg["id"].as_str() {
             Some(id) => format!("{}:{}", id, v["requestId"].as_str().unwrap_or("")),
@@ -223,14 +251,19 @@ impl Store {
         let block = Duration::hours(BLOCK_HOURS);
         let mut start: Option<DateTime<Utc>> = None;
         for r in &recs {
-            if start.map_or(true, |s| r.t >= s + block) {
-                start = r.t.with_minute(0).and_then(|t| t.with_second(0)).and_then(|t| t.with_nanosecond(0));
+            if start.is_none_or(|s| r.t >= s + block) {
+                start =
+                    r.t.with_minute(0)
+                        .and_then(|t| t.with_second(0))
+                        .and_then(|t| t.with_nanosecond(0));
             }
         }
-        let active_block = start.map_or(false, |s| now < s + block);
+        let active_block = start.is_some_and(|s| now < s + block);
         let block_start = if active_block { start } else { None };
         let block_secs = (BLOCK_HOURS * 3600) as f64;
-        let block_left = block_start.map_or(0.0, |s| (s + block - now).num_milliseconds() as f64 / 1000.0);
+        let block_left = block_start.map_or(0.0, |s| {
+            (s + block - now).num_milliseconds() as f64 / 1000.0
+        });
 
         let mut s_block = Sum::default();
         let nbins = (BLOCK_HOURS * 6) as usize;
@@ -254,13 +287,19 @@ impl Store {
             .map(|back| {
                 let d = today_local - Duration::days(back);
                 Day {
-                    label: if back == 0 { "Today".into() } else { d.format("%a").to_string() },
+                    label: if back == 0 {
+                        "Today".into()
+                    } else {
+                        d.format("%a").to_string()
+                    },
                     cost: 0.0,
                 }
             })
             .collect();
-        let day_starts: Vec<DateTime<Utc>> =
-            (0..7).rev().map(|back| midnight(today_local - Duration::days(back))).collect();
+        let day_starts: Vec<DateTime<Utc>> = (0..7)
+            .rev()
+            .map(|back| midnight(today_local - Duration::days(back)))
+            .collect();
 
         let mut models: HashMap<String, f64> = HashMap::new();
         let mut sessions: HashMap<&str, Session> = HashMap::new();
@@ -286,11 +325,20 @@ impl Store {
             if r.t >= today0 {
                 s_today.add(r, cfg);
                 let name = r.model.trim_start_matches("claude-");
-                *models.entry(if name.is_empty() { "unknown".into() } else { name.into() }).or_default() +=
-                    cost;
+                *models
+                    .entry(if name.is_empty() {
+                        "unknown".into()
+                    } else {
+                        name.into()
+                    })
+                    .or_default() += cost;
             }
             for (i, d0) in day_starts.iter().enumerate() {
-                let d1 = if i + 1 < 7 { day_starts[i + 1] } else { today0 + Duration::days(1) };
+                let d1 = if i + 1 < 7 {
+                    day_starts[i + 1]
+                } else {
+                    today0 + Duration::days(1)
+                };
                 if r.t >= *d0 && r.t < d1 {
                     days[i].cost += cost;
                 }
@@ -311,24 +359,39 @@ impl Store {
 
         let sysnow = SystemTime::now();
         for (sid, s) in sessions.iter_mut() {
-            s.active = self.session_mtime.get(*sid).map_or(false, |m| {
-                sysnow.duration_since(*m).map_or(true, |d| d.as_secs() < ACTIVE_WINDOW_SECS)
+            s.active = self.session_mtime.get(*sid).is_some_and(|m| {
+                sysnow
+                    .duration_since(*m)
+                    .map_or(true, |d| d.as_secs() < ACTIVE_WINDOW_SECS)
             });
         }
         let active = sessions.values().filter(|s| s.active).count();
         let mut sessions: Vec<Session> = sessions.into_values().collect();
         sessions.sort_by(|a, b| b.last.cmp(&a.last));
-        let mut models: Vec<Model> = models.into_iter().map(|(name, cost)| Model { name, cost }).collect();
-        models.sort_by(|a, b| b.cost.partial_cmp(&a.cost).unwrap_or(std::cmp::Ordering::Equal));
+        let mut models: Vec<Model> = models
+            .into_iter()
+            .map(|(name, cost)| Model { name, cost })
+            .collect();
+        models.sort_by(|a, b| {
+            b.cost
+                .partial_cmp(&a.cost)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         Stats {
             now,
             block_start,
             block_left,
-            block_frac: if block_start.is_some() { 1.0 - block_left / block_secs } else { 0.0 },
+            block_frac: if block_start.is_some() {
+                1.0 - block_left / block_secs
+            } else {
+                0.0
+            },
             block: s_block,
             wbins,
-            cur_bin: block_start.map_or(-1, |s| ((now - s).num_seconds() / 600).min(nbins as i64 - 1)),
+            cur_bin: block_start.map_or(-1, |s| {
+                ((now - s).num_seconds() / 600).min(nbins as i64 - 1)
+            }),
             spark,
             today: s_today,
             hour: s_hour,
@@ -348,16 +411,27 @@ pub fn sample_stats() -> Stats {
     let start = now - Duration::minutes(2 * 60 + 18);
     let block_left = (BLOCK_HOURS * 3600 - (2 * 60 + 18) * 60) as f64;
     let mut wbins = vec![0u64; (BLOCK_HOURS * 6) as usize];
-    for (i, v) in [3200, 8100, 12400, 6100, 0, 2400, 9800, 15200, 11800, 7400, 13900, 4600, 9100, 6800]
-        .iter()
-        .enumerate()
+    for (i, v) in [
+        3200, 8100, 12400, 6100, 0, 2400, 9800, 15200, 11800, 7400, 13900, 4600, 9100, 6800,
+    ]
+    .iter()
+    .enumerate()
     {
         wbins[i] = *v;
     }
     let spark = vec![
-        420, 0, 880, 1300, 610, 0, 0, 1900, 2600, 1200, 740, 0, 1650, 2300, 3100, 1800, 900, 2700, 3400, 2100,
+        420, 0, 880, 1300, 610, 0, 0, 1900, 2600, 1200, 740, 0, 1650, 2300, 3100, 1800, 900, 2700,
+        3400, 2100,
     ];
-    let sum = |inp, out, cw, cr, cost, n| Sum { inp, out, cw, cr, all: inp + out + cw + cr, cost, n };
+    let sum = |inp, out, cw, cr, cost, n| Sum {
+        inp,
+        out,
+        cw,
+        cr,
+        all: inp + out + cw + cr,
+        cost,
+        n,
+    };
     let today_local = Local::now().date_naive();
     let costs = [3.20, 0.0, 5.84, 9.12, 4.41, 7.63, 11.27];
     let days = costs
@@ -369,7 +443,9 @@ pub fn sample_stats() -> Stats {
                 label: if back == 0 {
                     "Today".into()
                 } else {
-                    (today_local - Duration::days(back)).format("%a").to_string()
+                    (today_local - Duration::days(back))
+                        .format("%a")
+                        .to_string()
                 },
                 cost: *c,
             }
@@ -396,9 +472,18 @@ pub fn sample_stats() -> Stats {
         burn: 2860.0,
         days,
         models: vec![
-            Model { name: "opus-5-5".into(), cost: 9.41 },
-            Model { name: "sonnet-5-5".into(), cost: 1.52 },
-            Model { name: "haiku-5-5".into(), cost: 0.34 },
+            Model {
+                name: "opus-5-5".into(),
+                cost: 9.41,
+            },
+            Model {
+                name: "sonnet-5-5".into(),
+                cost: 1.52,
+            },
+            Model {
+                name: "haiku-5-5".into(),
+                cost: 0.34,
+            },
         ],
         sessions: vec![
             session("C--dev-webapp", 0, 3_910_000, 5.62, true),
@@ -455,4 +540,128 @@ pub fn fmt_ago(sec: i64) -> String {
 pub fn pretty_project(folder: &str) -> String {
     let tail = folder.rsplit('-').find(|s| !s.is_empty()).unwrap_or(folder);
     tail.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn formats_tokens() {
+        assert_eq!(fmt_tokens(0.0), "0");
+        assert_eq!(fmt_tokens(999.0), "999");
+        assert_eq!(fmt_tokens(1_500.0), "1.5K");
+        assert_eq!(fmt_tokens(2_340_000.0), "2.34M");
+        assert_eq!(fmt_tokens(3_100_000_000.0), "3.10B");
+    }
+
+    #[test]
+    fn formats_money_and_time() {
+        assert_eq!(fmt_money(0.5), "$0.50");
+        assert_eq!(fmt_money(123.4), "$123");
+        assert_eq!(fmt_left(42.0 * 60.0), "42m");
+        assert_eq!(fmt_left(3.0 * 3600.0 + 5.0 * 60.0), "3h 05m");
+        assert_eq!(fmt_left(-5.0), "0m");
+        assert_eq!(fmt_ago(30), "just now");
+        assert_eq!(fmt_ago(26 * 60), "26m ago");
+        assert_eq!(fmt_ago(3 * 3600), "3h ago");
+        assert_eq!(fmt_ago(2 * 86400), "2d ago");
+    }
+
+    #[test]
+    fn pretty_project_takes_last_segment() {
+        assert_eq!(pretty_project("C--Users-me-webapp"), "webapp");
+        assert_eq!(pretty_project("plain"), "plain");
+    }
+
+    #[test]
+    fn prices_match_by_substring_with_fallback() {
+        let cfg = Config::default();
+        assert_eq!(cfg.price_for("claude-opus-5-5"), [5.0, 25.0, 6.25, 0.5]);
+        assert_eq!(cfg.price_for("claude-haiku-5-5"), [1.0, 5.0, 1.25, 0.1]);
+        assert_eq!(cfg.price_for("something-else"), cfg.prices["sonnet"]);
+    }
+
+    fn line(id: &str, req: &str, ts: DateTime<Utc>, out: u64) -> String {
+        format!(
+            r#"{{"timestamp":"{}","requestId":"{req}","message":{{"id":"{id}","model":"claude-opus-5-5","usage":{{"input_tokens":10,"output_tokens":{out},"cache_creation_input_tokens":100,"cache_read_input_tokens":1000}}}}}}"#,
+            ts.to_rfc3339()
+        )
+    }
+
+    #[test]
+    fn parses_dedupes_and_aggregates() {
+        let root = std::env::temp_dir().join(format!("cuw-test-{}", std::process::id()));
+        let proj = root.join("C--dev-webapp");
+        std::fs::create_dir_all(&proj).unwrap();
+        let file = proj.join("session-1.jsonl");
+        let now = Utc::now();
+        let t = now - Duration::minutes(5);
+        {
+            let mut f = std::fs::File::create(&file).unwrap();
+            writeln!(f, "{}", line("msg_a", "req_1", t, 50)).unwrap();
+            // streaming writes the same message again: must be counted once
+            writeln!(f, "{}", line("msg_a", "req_1", t, 50)).unwrap();
+            writeln!(f, "{}", line("msg_b", "req_2", t, 70)).unwrap();
+            writeln!(
+                f,
+                r#"{{"type":"user","message":{{"content":"no usage here"}}}}"#
+            )
+            .unwrap();
+            // incomplete trailing line is held back until it is finished
+            write!(f, "{}", &line("msg_c", "req_3", t, 1000)[..40]).unwrap();
+        }
+        let cfg = Config::default();
+        let mut store = Store::new(root.clone());
+        store.scan();
+        let s = store.stats(&cfg);
+        assert_eq!(s.block.n, 2);
+        assert_eq!(s.block.out, 120);
+        assert_eq!(s.block.all, 2 * (10 + 100 + 1000) + 120);
+        assert!(
+            s.block_start.is_some(),
+            "recent activity opens a 5-hour window"
+        );
+        assert_eq!(s.sessions.len(), 1);
+        assert_eq!(s.sessions[0].proj, "C--dev-webapp");
+        // output 120 * $25/M + input 20 * $5/M + cache write 200 * $6.25/M + cache read 2000 * $0.5/M
+        let expected = (120.0 * 25.0 + 20.0 * 5.0 + 200.0 * 6.25 + 2000.0 * 0.5) / 1e6;
+        assert!((s.block.cost - expected).abs() < 1e-12);
+
+        // finish the partial line: the next scan picks it up exactly once
+        {
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&file)
+                .unwrap();
+            writeln!(f, "{}", &line("msg_c", "req_3", t, 1000)[40..]).unwrap();
+        }
+        store.scan();
+        let s = store.stats(&cfg);
+        assert_eq!(s.block.n, 3);
+        assert_eq!(s.block.out, 1120);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn old_activity_has_no_open_window() {
+        let root = std::env::temp_dir().join(format!("cuw-test-old-{}", std::process::id()));
+        let proj = root.join("p");
+        std::fs::create_dir_all(&proj).unwrap();
+        let mut f = std::fs::File::create(proj.join("s.jsonl")).unwrap();
+        writeln!(
+            f,
+            "{}",
+            line("msg_x", "r", Utc::now() - Duration::hours(6), 5)
+        )
+        .unwrap();
+        drop(f);
+        let mut store = Store::new(root.clone());
+        store.scan();
+        let s = store.stats(&Config::default());
+        assert!(s.block_start.is_none());
+        assert_eq!(s.block_frac, 0.0);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

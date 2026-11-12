@@ -145,17 +145,27 @@ wix build installer\widget.wxs -arch x64 -d Version=1.0.0 -o dist\ClaudeUsageWid
 
 ## Releasing
 
-1. Bump `version` in `Cargo.toml`.
-2. Commit, then push a matching tag:
+Releases are automatic. The [CI & Release workflow](.github/workflows/release.yml)
+runs on every push and pull request.
 
-   ```powershell
-   git tag v1.1.0
-   git push origin v1.1.0
-   ```
+1. **Checks:** `cargo fmt --check`, `cargo clippy -D warnings` and
+   `cargo test`.
+2. **Release:** on a push to `main` that passes the checks, if the `version` in
+   `Cargo.toml` has no GitHub Release yet, the workflow builds the setup `.exe`,
+   the `.msi`, the portable `.zip` and `SHA256SUMS.txt`. It then tags the commit
+   `v<version>` and publishes the release.
 
-The [Release workflow](.github/workflows/release.yml) builds the setup `.exe`,
-the `.msi`, the portable `.zip` and `SHA256SUMS.txt`, and attaches them to a
-new GitHub Release.
+So to ship, bump `version` in `Cargo.toml` (and run `cargo build` so
+`Cargo.lock` updates), commit, and push. Commits that don't change the version
+are checked but not released.
+
+Run the same checks locally before pushing:
+
+```powershell
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+```
 
 ## How it works
 

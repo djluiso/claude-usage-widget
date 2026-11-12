@@ -1,4 +1,6 @@
 #![windows_subsystem = "windows"]
+// Drawing helpers naturally take position, size, colour and style together.
+#![allow(clippy::too_many_arguments)]
 //! Claude Code Usage — Windows 11 taskbar readout + slide-in detail panel.
 //! Reads Claude Code's local transcripts; nothing leaves the machine.
 
@@ -12,7 +14,9 @@ use windows::core::w;
 use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
 use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::Threading::CreateMutexW;
-use windows::Win32::UI::HiDpi::{SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2};
+use windows::Win32::UI::HiDpi::{
+    SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+};
 
 fn main() {
     std::panic::set_hook(Box::new(|info| {

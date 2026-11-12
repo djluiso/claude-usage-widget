@@ -20,7 +20,11 @@ pub fn rect_of(hwnd: HWND) -> Option<RECT> {
 }
 
 pub fn taskbar() -> Option<HWND> {
-    unsafe { FindWindowW(w!("Shell_TrayWnd"), PCWSTR::null()).ok().filter(|h| !h.is_invalid()) }
+    unsafe {
+        FindWindowW(w!("Shell_TrayWnd"), PCWSTR::null())
+            .ok()
+            .filter(|h| !h.is_invalid())
+    }
 }
 
 pub fn tray_notify(tray: HWND) -> Option<HWND> {
@@ -48,12 +52,13 @@ pub fn fullscreen_app_active(own_classes: &[&str]) -> bool {
         return false;
     }
     let cls = class_name(fg);
-    if ["Progman", "WorkerW", "Shell_TrayWnd"].contains(&cls.as_str()) || own_classes.contains(&cls.as_str())
+    if ["Progman", "WorkerW", "Shell_TrayWnd"].contains(&cls.as_str())
+        || own_classes.contains(&cls.as_str())
     {
         return false;
     }
     let (sw, sh) = screen_size();
-    rect_of(fg).map_or(false, |r| r.left <= 0 && r.top <= 0 && r.right >= sw && r.bottom >= sh)
+    rect_of(fg).is_some_and(|r| r.left <= 0 && r.top <= 0 && r.right >= sw && r.bottom >= sh)
 }
 
 // ------------------------------------------------------- layered windows ---
@@ -75,9 +80,20 @@ pub fn layered_show(hwnd: HWND, bgra: &[u8], w: i32, h: i32, x: i32, y: i32, alp
             ..Default::default()
         };
         let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
-        let ok = match CreateDIBSection(screen, &bmi, DIB_RGB_COLORS, &mut bits, HANDLE::default(), 0) {
+        let ok = match CreateDIBSection(
+            screen,
+            &bmi,
+            DIB_RGB_COLORS,
+            &mut bits,
+            HANDLE::default(),
+            0,
+        ) {
             Ok(hbmp) if !bits.is_null() => {
-                std::ptr::copy_nonoverlapping(bgra.as_ptr(), bits as *mut u8, bgra.len().min((w * h * 4) as usize));
+                std::ptr::copy_nonoverlapping(
+                    bgra.as_ptr(),
+                    bits as *mut u8,
+                    bgra.len().min((w * h * 4) as usize),
+                );
                 let old = SelectObject(mem, hbmp);
                 let blend = BLENDFUNCTION {
                     BlendOp: AC_SRC_OVER as u8,
@@ -153,9 +169,18 @@ pub fn capture_screen(x: i32, y: i32, w: i32, h: i32) -> Option<Vec<u8>> {
         };
         let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
         let mut out = None;
-        if let Ok(hbmp) = CreateDIBSection(screen, &bmi, DIB_RGB_COLORS, &mut bits, HANDLE::default(), 0) {
+        if let Ok(hbmp) = CreateDIBSection(
+            screen,
+            &bmi,
+            DIB_RGB_COLORS,
+            &mut bits,
+            HANDLE::default(),
+            0,
+        ) {
             let old = SelectObject(mem, hbmp);
-            if BitBlt(mem, 0, 0, w, h, screen, x, y, SRCCOPY | CAPTUREBLT).is_ok() && !bits.is_null() {
+            if BitBlt(mem, 0, 0, w, h, screen, x, y, SRCCOPY | CAPTUREBLT).is_ok()
+                && !bits.is_null()
+            {
                 let len = (w * h * 4) as usize;
                 out = Some(std::slice::from_raw_parts(bits as *const u8, len).to_vec());
             }
@@ -177,7 +202,11 @@ pub struct WidgetsLocator {
 
 impl WidgetsLocator {
     pub fn new() -> Self {
-        Self { uia: None, cache: None, checked: None }
+        Self {
+            uia: None,
+            cache: None,
+            checked: None,
+        }
     }
 
     pub fn invalidate(&mut self) {
@@ -186,7 +215,10 @@ impl WidgetsLocator {
 
     /// Right edge (physical px) of the Windows 11 Widgets/weather button.
     pub fn right_edge(&mut self, tray: HWND) -> Option<i32> {
-        if self.checked.map_or(false, |t| t.elapsed() < Duration::from_secs(30)) {
+        if self
+            .checked
+            .is_some_and(|t| t.elapsed() < Duration::from_secs(30))
+        {
             return self.cache;
         }
         self.checked = Some(Instant::now());
@@ -202,7 +234,9 @@ impl WidgetsLocator {
             let uia = self.uia.as_ref()?;
             let root = uia.ElementFromHandle(tray).ok()?;
             let id = VARIANT::from(BSTR::from("WidgetsButton"));
-            let cond = uia.CreatePropertyCondition(UIA_AutomationIdPropertyId, &id).ok()?;
+            let cond = uia
+                .CreatePropertyCondition(UIA_AutomationIdPropertyId, &id)
+                .ok()?;
             let el = root.FindFirst(TreeScope_Descendants, &cond).ok()?;
             let r = el.CurrentBoundingRectangle().ok()?;
             (r.right > r.left).then_some(r.right)
@@ -216,7 +250,16 @@ const RUN_VALUE: PCWSTR = w!("ClaudeUsageWidget");
 
 pub fn startup_enabled() -> bool {
     unsafe {
-        RegGetValueW(HKEY_CURRENT_USER, RUN_KEY, RUN_VALUE, RRF_RT_REG_SZ, None, None, None).is_ok()
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            RUN_KEY,
+            RUN_VALUE,
+            RRF_RT_REG_SZ,
+            None,
+            None,
+            None,
+        )
+        .is_ok()
     }
 }
 

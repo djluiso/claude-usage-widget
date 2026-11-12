@@ -29,7 +29,12 @@ impl Default for Config {
         prices.insert("sonnet".into(), [3.00, 15.00, 3.75, 0.30]);
         prices.insert("haiku".into(), [1.00, 5.00, 1.25, 0.10]);
         prices.insert("fable".into(), [5.00, 25.00, 6.25, 0.50]);
-        Self { dock: "left".into(), theme: "system".into(), refresh_ms: 3000, prices }
+        Self {
+            dock: "left".into(),
+            theme: "system".into(),
+            refresh_ms: 3000,
+            prices,
+        }
     }
 }
 
@@ -85,7 +90,10 @@ impl ConfigFile {
         let cfg = std::fs::read_to_string(&path)
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok());
-        let mut me = Self { cfg: cfg.clone().unwrap_or_default(), mtime: None };
+        let mut me = Self {
+            cfg: cfg.clone().unwrap_or_default(),
+            mtime: None,
+        };
         if cfg.is_none() {
             me.save();
         }
@@ -109,7 +117,10 @@ impl ConfigFile {
             return false;
         }
         self.mtime = m;
-        match std::fs::read_to_string(&path).ok().and_then(|s| serde_json::from_str(&s).ok()) {
+        match std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+        {
             Some(cfg) => {
                 self.cfg = cfg;
                 true

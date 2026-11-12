@@ -9,7 +9,8 @@ use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
 const SW: f32 = 560.0; // logical width
 const CLS_SETTINGS: PCWSTR = w!("ClaudeUsageSettings");
 const T_CARET: usize = 4;
-const STYLE: WINDOW_STYLE = WINDOW_STYLE(WS_OVERLAPPED.0 | WS_CAPTION.0 | WS_SYSMENU.0 | WS_MINIMIZEBOX.0);
+const STYLE: WINDOW_STYLE =
+    WINDOW_STYLE(WS_OVERLAPPED.0 | WS_CAPTION.0 | WS_SYSMENU.0 | WS_MINIMIZEBOX.0);
 
 #[derive(Clone, PartialEq)]
 enum Hit {
@@ -41,7 +42,8 @@ pub(super) fn register(hinst: windows::Win32::Foundation::HINSTANCE) {
             lpfnWndProc: Some(settings_proc),
             hInstance: hinst,
             hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
-            hIcon: LoadIconW(hinst, PCWSTR(1 as *const u16)).unwrap_or_default(),
+            // MAKEINTRESOURCE(1): the app icon embedded by build.rs
+            hIcon: LoadIconW(hinst, PCWSTR(std::ptr::without_provenance(1))).unwrap_or_default(),
             lpszClassName: CLS_SETTINGS,
             ..Default::default()
         };
@@ -68,7 +70,15 @@ impl App {
         if self.panel_open && self.anim.is_none() {
             self.render_panel();
             let (w, h) = self.panel_size;
-            sys::layered_show(self.panel, &self.panel_bgra, w, h, self.panel_x, self.panel_y, 255);
+            sys::layered_show(
+                self.panel,
+                &self.panel_bgra,
+                w,
+                h,
+                self.panel_x,
+                self.panel_y,
+                255,
+            );
         }
         self.settings_theme_changed();
     }
@@ -143,14 +153,21 @@ impl App {
     /// Size the window so its client area matches the content (and centre it).
     fn fit_settings_window(&mut self, center: bool) {
         let h = self.settings_height();
-        let Some(s) = self.settings.as_mut() else { return };
+        let Some(s) = self.settings.as_mut() else {
+            return;
+        };
         let (cw, ch) = ((SW * s.k).round() as i32, (h * s.k).round() as i32);
         if s.size == (cw, ch) && !center {
             return;
         }
         s.size = (cw, ch);
         unsafe {
-            let mut r = RECT { left: 0, top: 0, right: cw, bottom: ch };
+            let mut r = RECT {
+                left: 0,
+                top: 0,
+                right: cw,
+                bottom: ch,
+            };
             let dpi = GetDpiForWindow(s.hwnd);
             let _ = AdjustWindowRectExForDpi(&mut r, STYLE, false, WS_EX_APPWINDOW, dpi);
             let (ww, wh) = (r.right - r.left, r.bottom - r.top);
@@ -206,19 +223,37 @@ impl App {
         let th = self.theme;
         let startup = sys::startup_enabled();
         let cfg = self.cfg.cfg.clone();
-        let Some(s) = self.settings.as_mut() else { return };
+        let Some(s) = self.settings.as_mut() else {
+            return;
+        };
         let k = s.k;
         let mut c = Canvas::new(SW, h, k, &self.fonts);
         let mut hits: Vec<([f32; 4], Hit)> = Vec::new();
         let light = is_light(th);
-        let bg = if light { [243, 243, 243, 255] } else { [32, 32, 32, 255] };
-        let field_bg = if light { [255, 255, 255, 255] } else { [255, 255, 255, 14] };
+        let bg = if light {
+            [243, 243, 243, 255]
+        } else {
+            [32, 32, 32, 255]
+        };
+        let field_bg = if light {
+            [255, 255, 255, 255]
+        } else {
+            [255, 255, 255, 14]
+        };
         c.rect(0.0, 0.0, SW, h, bg, 0.0);
 
         // header
         c.spark(32.0, 40.0, 11.0, th.accent);
         c.text(54.0, 22.0, "Settings", 20.0, th.text1, SB, "la");
-        c.text(54.0, 52.0, "Changes are saved automatically", 11.0, th.text3, R, "la");
+        c.text(
+            54.0,
+            52.0,
+            "Changes are saved automatically",
+            11.0,
+            th.text3,
+            R,
+            "la",
+        );
 
         // ---- General
         let (x, w) = (20.0, SW - 40.0);
@@ -228,7 +263,10 @@ impl App {
         let rows: [(&str, &str); 4] = [
             ("Theme", "Panel colours. System follows Windows' app mode."),
             ("Position", "Where the readout sits on the taskbar"),
-            ("Start with Windows", "Launch automatically when you sign in"),
+            (
+                "Start with Windows",
+                "Launch automatically when you sign in",
+            ),
             ("Refresh every", "How often transcripts are rescanned"),
         ];
         for (i, (label, desc)) in rows.iter().enumerate() {
@@ -252,7 +290,11 @@ impl App {
                         &mut hits,
                         right,
                         cy,
-                        &[("System", Hit::Theme("system")), ("Dark", Hit::Theme("dark")), ("Light", Hit::Theme("light"))],
+                        &[
+                            ("System", Hit::Theme("system")),
+                            ("Dark", Hit::Theme("dark")),
+                            ("Light", Hit::Theme("light")),
+                        ],
                         sel,
                     );
                 }
@@ -264,14 +306,20 @@ impl App {
                         &mut hits,
                         right,
                         cy,
-                        &[("Widgets button", Hit::Dock("left")), ("Tray icons", Hit::Dock("right"))],
+                        &[
+                            ("Widgets button", Hit::Dock("left")),
+                            ("Tray icons", Hit::Dock("right")),
+                        ],
                         sel,
                     );
                 }
                 2 => toggle(&mut c, th, &mut hits, right, cy, startup),
                 _ => {
                     let opts = [1000u32, 3000, 5000, 10000];
-                    let sel = opts.iter().position(|v| *v == cfg.refresh_ms).unwrap_or(usize::MAX);
+                    let sel = opts
+                        .iter()
+                        .position(|v| *v == cfg.refresh_ms)
+                        .unwrap_or(usize::MAX);
                     segmented(
                         &mut c,
                         th,
@@ -296,7 +344,15 @@ impl App {
         let ph = 88.0 + n * 38.0 + 52.0;
         c.card(x, y, w, ph, th.card, th.card_border, 8.0);
         c.text(x + 16.0, y + 14.0, "Prices", 12.0, th.text1, SB, "la");
-        c.text(x + w - 16.0, y + 15.0, "USD per million tokens", 11.0, th.text3, R, "ra");
+        c.text(
+            x + w - 16.0,
+            y + 15.0,
+            "USD per million tokens",
+            11.0,
+            th.text3,
+            R,
+            "ra",
+        );
         c.text(
             x + 16.0,
             y + 36.0,
@@ -310,22 +366,34 @@ impl App {
         let col = |j: usize| x + w - 16.0 - fw - (3 - j) as f32 * (fw + fg);
         let hy = y + 64.0;
         c.text(x + 16.0, hy, "Model", 10.0, th.text3, SB, "la");
-        for (j, name) in ["Input", "Output", "Cache write", "Cache read"].iter().enumerate() {
+        for (j, name) in ["Input", "Output", "Cache write", "Cache read"]
+            .iter()
+            .enumerate()
+        {
             c.text(col(j) + fw - 8.0, hy, name, 10.0, th.text3, SB, "ra");
         }
         for (i, (model, p)) in cfg.prices.iter().enumerate() {
             let ry = y + 86.0 + i as f32 * 38.0;
             c.text(x + 16.0, ry + 15.0, model, 12.0, th.text1, R, "lm");
+            #[allow(clippy::needless_range_loop)]
+            // j picks the column, the value and the hit target
             for j in 0..4 {
                 let fx = col(j);
-                let focused = s.focus.as_ref().map_or(false, |(m, jj)| m == model && *jj == j);
+                let focused = s
+                    .focus
+                    .as_ref()
+                    .is_some_and(|(m, jj)| m == model && *jj == j);
                 c.rect(fx, ry, fw, 30.0, field_bg, 4.0);
                 let border = if focused { th.accent } else { th.card_border };
                 c.card(fx, ry, fw, 30.0, [0, 0, 0, 0], border, 4.0);
                 if focused {
                     c.rect(fx + 1.0, ry + 28.0, fw - 2.0, 2.0, th.accent, 1.0);
                 }
-                let text = if focused { s.buf.clone() } else { fmt_price(p[j]) };
+                let text = if focused {
+                    s.buf.clone()
+                } else {
+                    fmt_price(p[j])
+                };
                 if focused && s.fresh && !text.is_empty() {
                     let tw = c.tw(&text, 12.0, R);
                     let sel = [th.accent[0], th.accent[1], th.accent[2], 90];
@@ -333,7 +401,14 @@ impl App {
                 }
                 c.text(fx + fw - 10.0, ry + 15.0, &text, 12.0, th.text1, R, "rm");
                 if focused && s.caret && !s.fresh {
-                    c.line(fx + fw - 9.0, ry + 8.0, fx + fw - 9.0, ry + 22.0, th.accent, 1.0);
+                    c.line(
+                        fx + fw - 9.0,
+                        ry + 8.0,
+                        fx + fw - 9.0,
+                        ry + 22.0,
+                        th.accent,
+                        1.0,
+                    );
                 }
                 hits.push(([fx, ry, fw, 30.0], Hit::Price(model.clone(), j)));
             }
@@ -345,12 +420,23 @@ impl App {
         c.card(bx, by, bw, 30.0, field_bg, th.card_border, 4.0);
         c.text(bx + bw / 2.0, by + 15.0, label, 11.0, th.text1, R, "mm");
         hits.push(([bx, by, bw, 30.0], Hit::Reset));
-        c.text(x + 16.0, by + 15.0, "Tab: next field · Enter: save · Esc: cancel", 10.0, th.text3, R, "lm");
+        c.text(
+            x + 16.0,
+            by + 15.0,
+            "Tab: next field · Enter: save · Esc: cancel",
+            10.0,
+            th.text3,
+            R,
+            "lm",
+        );
 
         // ---- links
         let ly = y + ph + 20.0;
         let mut lx = x + 4.0;
-        for (label, hit) in [("Open config file", Hit::OpenConfig), ("Open transcripts folder", Hit::OpenTranscripts)] {
+        for (label, hit) in [
+            ("Open config file", Hit::OpenConfig),
+            ("Open transcripts folder", Hit::OpenTranscripts),
+        ] {
             let tw = c.tw(label, 11.0, R);
             c.text(lx, ly, label, 11.0, th.accent, R, "la");
             hits.push(([lx - 4.0, ly - 4.0, tw + 8.0, 22.0], hit));
@@ -405,7 +491,9 @@ impl App {
     }
 
     fn commit_price(&mut self) {
-        let Some(s) = self.settings.as_mut() else { return };
+        let Some(s) = self.settings.as_mut() else {
+            return;
+        };
         if let Some((model, j)) = s.focus.take() {
             if let Ok(v) = s.buf.trim().parse::<f64>() {
                 if v.is_finite() && v >= 0.0 {
@@ -423,8 +511,16 @@ impl App {
     }
 
     fn focus_price(&mut self, model: String, j: usize) {
-        let value = self.cfg.cfg.prices.get(&model).map(|p| fmt_price(p[j])).unwrap_or_default();
-        let Some(s) = self.settings.as_mut() else { return };
+        let value = self
+            .cfg
+            .cfg
+            .prices
+            .get(&model)
+            .map(|p| fmt_price(p[j]))
+            .unwrap_or_default();
+        let Some(s) = self.settings.as_mut() else {
+            return;
+        };
         s.focus = Some((model, j));
         s.buf = value;
         s.fresh = true;
@@ -454,14 +550,18 @@ impl App {
                 let p = format!("\"{}\"", config::config_path().display());
                 sys::shell_open("notepad.exe", Some(&p));
             }
-            Some(Hit::OpenTranscripts) => sys::shell_open(&config::projects_dir().display().to_string(), None),
+            Some(Hit::OpenTranscripts) => {
+                sys::shell_open(&config::projects_dir().display().to_string(), None)
+            }
             None => {}
         }
         self.settings_invalidate();
     }
 
     fn settings_char(&mut self, ch: char) {
-        let Some(s) = self.settings.as_mut() else { return };
+        let Some(s) = self.settings.as_mut() else {
+            return;
+        };
         if s.focus.is_none() {
             return;
         }
@@ -519,8 +619,19 @@ impl App {
 }
 
 // ------------------------------------------------------------ controls -----
-fn segmented(c: &mut Canvas, th: &Theme, hits: &mut Vec<([f32; 4], Hit)>, right: f32, cy: f32, items: &[(&str, Hit)], sel: usize) {
-    let widths: Vec<f32> = items.iter().map(|(t, _)| c.tw(t, 11.0, SB) + 26.0).collect();
+fn segmented(
+    c: &mut Canvas,
+    th: &Theme,
+    hits: &mut Vec<([f32; 4], Hit)>,
+    right: f32,
+    cy: f32,
+    items: &[(&str, Hit)],
+    sel: usize,
+) {
+    let widths: Vec<f32> = items
+        .iter()
+        .map(|(t, _)| c.tw(t, 11.0, SB) + 26.0)
+        .collect();
     let total: f32 = widths.iter().sum::<f32>() + 4.0;
     let (x0, h) = (right - total, 30.0);
     c.card(x0, cy - h / 2.0, total, h, th.card, th.card_border, 6.0);
@@ -537,7 +648,14 @@ fn segmented(c: &mut Canvas, th: &Theme, hits: &mut Vec<([f32; 4], Hit)>, right:
     }
 }
 
-fn toggle(c: &mut Canvas, th: &Theme, hits: &mut Vec<([f32; 4], Hit)>, right: f32, cy: f32, on: bool) {
+fn toggle(
+    c: &mut Canvas,
+    th: &Theme,
+    hits: &mut Vec<([f32; 4], Hit)>,
+    right: f32,
+    cy: f32,
+    on: bool,
+) {
     let (w, h) = (44.0, 22.0);
     let x = right - w;
     if on {
@@ -547,13 +665,26 @@ fn toggle(c: &mut Canvas, th: &Theme, hits: &mut Vec<([f32; 4], Hit)>, right: f3
         c.card(x, cy - h / 2.0, w, h, [0, 0, 0, 0], th.text3, h / 2.0);
         c.circle(x + h / 2.0, cy, 6.0, th.text2);
     }
-    c.text(x - 10.0, cy, if on { "On" } else { "Off" }, 11.0, th.text2, R, "rm");
+    c.text(
+        x - 10.0,
+        cy,
+        if on { "On" } else { "Off" },
+        11.0,
+        th.text2,
+        R,
+        "rm",
+    );
     hits.push(([x - 40.0, cy - h / 2.0, w + 40.0, h], Hit::Startup));
 }
 
 // --------------------------------------------------------- window proc -----
 unsafe extern "system" fn settings_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
-    let xy = || ((lp.0 & 0xffff) as i16 as i32, ((lp.0 >> 16) & 0xffff) as i16 as i32);
+    let xy = || {
+        (
+            (lp.0 & 0xffff) as i16 as i32,
+            ((lp.0 >> 16) & 0xffff) as i16 as i32,
+        )
+    };
     match msg {
         WM_PAINT => {
             if with_app(|a| a.paint_settings(hwnd)).is_none() {
@@ -572,7 +703,8 @@ unsafe extern "system" fn settings_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LP
             let _ = GetCursorPos(&mut pt);
             let _ = ScreenToClient(hwnd, &mut pt);
             let hand = with_app(|a| a.settings_hit(pt.x, pt.y).is_some()).unwrap_or(false);
-            let cur = LoadCursorW(None, if hand { IDC_HAND } else { IDC_ARROW }).unwrap_or_default();
+            let cur =
+                LoadCursorW(None, if hand { IDC_HAND } else { IDC_ARROW }).unwrap_or_default();
             SetCursor(cur);
             LRESULT(1)
         }
@@ -606,7 +738,15 @@ unsafe extern "system" fn settings_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LP
                     s.size = (0, 0);
                 }
             });
-            let _ = SetWindowPos(hwnd, None, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOZORDER | SWP_NOACTIVATE);
+            let _ = SetWindowPos(
+                hwnd,
+                None,
+                r.left,
+                r.top,
+                r.right - r.left,
+                r.bottom - r.top,
+                SWP_NOZORDER | SWP_NOACTIVATE,
+            );
             with_app(|a| a.fit_settings_window(false));
             LRESULT(0)
         }

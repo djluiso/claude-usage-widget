@@ -110,17 +110,25 @@ impl<'a> Canvas<'a> {
     pub fn new(w: f32, h: f32, k: f32, fonts: &'a Fonts) -> Canvas<'a> {
         let pw = ((w * k).round() as u32).max(1);
         let ph = ((h * k).round() as u32).max(1);
-        Canvas { pm: Pixmap::new(pw, ph).expect("pixmap"), k, fonts }
+        Canvas {
+            pm: Pixmap::new(pw, ph).expect("pixmap"),
+            k,
+            fonts,
+        }
     }
 
     fn fill(&mut self, path: &Path, c: Rgba) {
         let t = Transform::from_scale(self.k, self.k);
-        self.pm.fill_path(path, &paint(c), FillRule::Winding, t, None);
+        self.pm
+            .fill_path(path, &paint(c), FillRule::Winding, t, None);
     }
 
     fn stroke(&mut self, path: &Path, c: Rgba, width: f32, round: bool) {
         let t = Transform::from_scale(self.k, self.k);
-        let mut s = Stroke { width, ..Stroke::default() };
+        let mut s = Stroke {
+            width,
+            ..Stroke::default()
+        };
         if round {
             s.line_cap = LineCap::Round;
         }
@@ -164,7 +172,16 @@ impl<'a> Canvas<'a> {
     }
 
     /// Progress ring starting at 12 o'clock, clockwise, round caps.
-    pub fn ring(&mut self, cx: f32, cy: f32, rad: f32, width: f32, frac: f64, c: Rgba, track: Rgba) {
+    pub fn ring(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        rad: f32,
+        width: f32,
+        frac: f64,
+        c: Rgba,
+        track: Rgba,
+    ) {
         let rm = rad - width / 2.0;
         if let Some(p) = PathBuilder::from_circle(cx, cy, rm) {
             self.stroke(&p, track, width, false);
@@ -212,18 +229,30 @@ impl<'a> Canvas<'a> {
             mask.fill_path(&p, FillRule::Winding, true, Transform::identity());
         }
         let t = Transform::from_scale(w / img.width() as f32, h / img.height() as f32);
-        let pp = PixmapPaint { quality: FilterQuality::Bilinear, ..PixmapPaint::default() };
+        let pp = PixmapPaint {
+            quality: FilterQuality::Bilinear,
+            ..PixmapPaint::default()
+        };
         self.pm.draw_pixmap(0, 0, img.as_ref(), &pp, t, Some(&mask));
     }
 
     pub fn draw_at(&mut self, img: &Pixmap, x: i32, y: i32) {
-        self.pm.draw_pixmap(x, y, img.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+        self.pm.draw_pixmap(
+            x,
+            y,
+            img.as_ref(),
+            &PixmapPaint::default(),
+            Transform::identity(),
+            None,
+        );
     }
 
     // ---------------------------------------------------------------- text --
     fn scaled(&self, size: f32, wt: Weight) -> (&FontVec, PxScale) {
         let f = self.fonts.get(wt);
-        let s = f.pt_to_px_scale(size * self.k * 0.75).unwrap_or(PxScale::from(size * self.k));
+        let s = f
+            .pt_to_px_scale(size * self.k * 0.75)
+            .unwrap_or(PxScale::from(size * self.k));
         (f, s)
     }
 
@@ -264,10 +293,15 @@ impl<'a> Canvas<'a> {
         let width = self.tw(s, size, wt) * self.k;
         let fonts = self.fonts;
         let f = fonts.get(wt);
-        let scale = f.pt_to_px_scale(size * self.k * 0.75).unwrap_or(PxScale::from(size * self.k));
+        let scale = f
+            .pt_to_px_scale(size * self.k * 0.75)
+            .unwrap_or(PxScale::from(size * self.k));
         let sf = f.as_scaled(scale);
         let a: Vec<char> = anchor.chars().collect();
-        let (ha, va) = (a.first().copied().unwrap_or('l'), a.get(1).copied().unwrap_or('a'));
+        let (ha, va) = (
+            a.first().copied().unwrap_or('l'),
+            a.get(1).copied().unwrap_or('a'),
+        );
         let mut caret = match ha {
             'm' => x * self.k - width / 2.0,
             'r' => x * self.k - width,
