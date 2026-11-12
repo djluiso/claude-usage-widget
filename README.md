@@ -4,7 +4,21 @@ A Windows 11 taskbar readout that shows your Claude Code usage in near real time
 Click it to slide in a detail panel. It's a single native `.exe` (about 1 MB)
 written in Rust, with no runtime to install.
 
-![icon](assets/icon.png)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/readout-dark.png">
+    <img src="docs/readout-light.png" alt="Taskbar readout: ring gauge, tokens used in the 5-hour window, time left, and a sparkline" width="205">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/panel-dark.png">
+    <img src="docs/panel-light.png" alt="Detail panel: 5-hour window gauge, activity chart, stat tiles, 7-day history, token mix, models and recent sessions" width="808">
+  </picture>
+</p>
+
+<p align="center"><sub>Screenshots use sample data. They switch between the dark and light themes with your GitHub theme.</sub></p>
 
 - **Taskbar readout:** sits next to the Widgets (weather) button, or by the tray.
   It shows three things:
@@ -42,6 +56,7 @@ Requires Windows 11 (x64).
 - In the panel, press **Esc** or click anywhere else to close it.
 - **Right-click** the readout or the panel for the menu:
   - dock position (next to the Widgets button or next to the tray icons)
+  - **Theme:** System, Dark or Light
   - **Start with Windows**
   - open the transcripts folder
   - edit settings
@@ -59,6 +74,19 @@ Both add a `ClaudeUsageWidget` value under
 the menu item or disable it in **Settings → Apps → Startup**. Uninstalling
 removes the entry.
 
+## Themes
+
+Pick a theme from the right-click menu under **Theme**:
+
+| Option | Panel |
+|---|---|
+| **System** (default) | Follows Windows' app mode (**Settings → Personalization → Colors → Choose your default app mode**), and switches live when you change it |
+| **Dark** | Always dark |
+| **Light** | Always light |
+
+The taskbar readout always matches the taskbar itself (Windows mode), so it
+stays readable whatever the panel theme is.
+
 ## Settings
 
 Settings live in `%LOCALAPPDATA%\ClaudeUsageWidget\config.json`. The file is
@@ -67,6 +95,7 @@ created on first run, and changes are picked up automatically.
 ```json
 {
   "dock": "left",
+  "theme": "system",
   "refresh_ms": 3000,
   "prices": {
     "opus":   [5.0, 25.0, 6.25, 0.5],
@@ -75,6 +104,7 @@ created on first run, and changes are picked up automatically.
 }
 ```
 
+`dock` is `"left"` or `"right"`, and `theme` is `"system"`, `"dark"` or `"light"`.
 `prices` are USD per million tokens, in the order
 `[input, output, cache write, cache read]`. They're matched against the model
 name by substring.
@@ -93,6 +123,8 @@ You need these tools:
 
 ```powershell
 cargo build --release
+# regenerate the README screenshots (sample data) into docs\
+.\target\release\claude-usage-widget.exe --screenshots docs
 iscc /DAppVersion=1.0.0 installer\setup.iss
 wix build installer\widget.wxs -arch x64 -d Version=1.0.0 -o dist\ClaudeUsageWidget-1.0.0.msi
 ```

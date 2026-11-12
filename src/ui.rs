@@ -68,7 +68,27 @@ const LIGHT: Theme = Theme {
     cat: [hex(0x2a78d6), hex(0xeb6834), hex(0x1baf7a), hex(0xeda100)],
 };
 
-fn light_theme() -> bool {
+/// Panel theme: "dark" / "light" force it; anything else follows Windows'
+/// app mode (Settings > Personalization > Colors > default app mode).
+fn resolve_theme(setting: &str) -> &'static Theme {
+    match setting {
+        "dark" => &DARK,
+        "light" => &LIGHT,
+        _ if personalize_flag(w!("AppsUseLightTheme")) => &LIGHT,
+        _ => &DARK,
+    }
+}
+
+/// Readout theme: always matches the taskbar (Windows mode) so it stays legible.
+fn taskbar_theme() -> &'static Theme {
+    if personalize_flag(w!("SystemUsesLightTheme")) {
+        &LIGHT
+    } else {
+        &DARK
+    }
+}
+
+fn personalize_flag(name: PCWSTR) -> bool {
     use windows::Win32::System::Registry::*;
     let mut v: u32 = 0;
     let mut sz = 4u32;
@@ -76,7 +96,7 @@ fn light_theme() -> bool {
         RegGetValueW(
             HKEY_CURRENT_USER,
             w!(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"),
-            w!("SystemUsesLightTheme"),
+            name,
             RRF_RT_REG_DWORD,
             None,
             Some(&mut v as *mut u32 as *mut _),
@@ -110,6 +130,9 @@ const M_STARTUP: usize = 4;
 const M_TRANSCRIPTS: usize = 5;
 const M_SETTINGS: usize = 6;
 const M_QUIT: usize = 9;
+const M_THEME_SYSTEM: usize = 10;
+const M_THEME_DARK: usize = 11;
+const M_THEME_LIGHT: usize = 12;
 
 struct Anim {
     x0: i32,
@@ -125,7 +148,8 @@ struct Anim {
 
 struct App {
     fonts: Fonts,
-    theme: &'static Theme,
+    theme: &'static Theme,     // panel (user setting)
+    bar_theme: &'static Theme, // readout (matches the taskbar)
     cfg: ConfigFile,
     store: Store,
     stats: Option<Stats>,
@@ -223,7 +247,8 @@ pub fn run() {
         let refresh = cfg.cfg.refresh_ms.clamp(500, 60_000);
         let app = App {
             fonts: Fonts::load(),
-            theme: if light_theme() { &LIGHT } else { &DARK },
+            theme: resolve_theme(&cfg.cfg.theme),
+            bar_theme: taskbar_theme(),
             cfg,
             store: Store::new(config::projects_dir()),
             stats: None,
@@ -262,6 +287,9 @@ impl App {
         if self.cfg.reload_if_changed() {
             self.locator.invalidate();
         }
+        // pick up Windows light/dark switches live
+        self.theme = resolve_theme(&self.cfg.cfg.theme);
+        self.bar_theme = taskbar_theme();
         self.store.scan();
         self.stats = Some(self.store.stats(&self.cfg.cfg));
         self.render_readout();
@@ -328,48 +356,9 @@ impl App {
         let Some(s) = self.stats.as_ref() else { return };
         let Some(tray) = sys::taskbar() else { return };
         let Some(bar) = sys::rect_of(tray) else { return };
-        let th = self.theme;
         let hpx = bar.bottom - bar.top;
         let k = hpx as f32 / BAR_H;
-
-        let line1 = fmt_tokens(if s.block_start.is_some() { s.block.all } else { s.today.all } as f64);
-        let line2 = if s.block_start.is_some() {
-            format!("{} left", fmt_left(s.block_left))
-        } else {
-            "idle · today".into()
-        };
-        let probe = Canvas::new(1.0, 1.0, k, &self.fonts);
-        let tw = probe.tw(&line1, 13.0, SB).max(probe.tw(&line2, 11.0, R));
-        let (ring_d, spark_w) = (28.0, 62.0);
-        let w = (8.0 + ring_d + 10.0 + tw + 12.0 + spark_w + 10.0).ceil();
-        let mut c = Canvas::new(w, BAR_H, k, &self.fonts);
-
-        if self.panel_open {
-            c.rect(2.0, 4.0, w - 4.0, BAR_H - 8.0, th.active, 5.0);
-            c.rect(w / 2.0 - 8.0, BAR_H - 7.0, 16.0, 3.0, th.accent, 1.5);
-        } else if self.hover {
-            c.rect(2.0, 4.0, w - 4.0, BAR_H - 8.0, th.hover, 5.0);
-        }
-        let (cx, cy) = (8.0 + ring_d / 2.0, BAR_H / 2.0);
-        c.ring(cx, cy, ring_d / 2.0, 3.2, s.block_frac, th.accent, th.track);
-        c.spark(cx, cy, 6.2, if s.live() { th.accent } else { th.text3 });
-        let tx = 8.0 + ring_d + 10.0;
-        c.text(tx, cy - 1.0, &line1, 13.0, th.text1, SB, "ls");
-        c.text(tx, cy + 3.0, &line2, 11.0, th.text2, R, "lt");
-
-        // sparkline: output tokens per 3 minutes over the last hour
-        let (sx, base, sh) = (tx + tw + 12.0, cy + 10.0, 20.0);
-        let n = s.spark.len() as f32;
-        let bw = (spark_w - (n - 1.0)) / n;
-        let peak = (*s.spark.iter().max().unwrap_or(&0)).max(1) as f32;
-        c.line(sx, base + 0.5, sx + spark_w, base + 0.5, th.grid, 1.0);
-        for (i, v) in s.spark.iter().enumerate() {
-            if *v > 0 {
-                let bh = (sh * *v as f32 / peak).max(2.0);
-                c.bar_up(sx + i as f32 * (bw + 1.0), base, bw, bh, th.accent, 1.2);
-            }
-        }
-
+        let c = draw_readout(&self.fonts, self.bar_theme, s, k, self.hover, self.panel_open);
         let (pw, ph) = (c.pm.width() as i32, c.pm.height() as i32);
         let bgra = c.to_bgra(1); // alpha 1: invisible but clickable
         let x = if self.cfg.cfg.dock == "right" {
@@ -384,17 +373,6 @@ impl App {
     }
 
     // -------------------------------------------------------------- panel --
-    fn layout(s: &Stats) -> (f32, usize, usize, [f32; 3], [f32; 4]) {
-        let nm = s.models.len().clamp(1, 3);
-        let ns = s.sessions.len().clamp(1, 4);
-        let left = [160.0, 156.0, 2.0 * 82.0 + 12.0];
-        let right = [164.0, 124.0, 46.0 + 30.0 * nm as f32, 46.0 + 36.0 * ns as f32];
-        let gap = 14.0;
-        let lh: f32 = left.iter().sum::<f32>() + gap * 2.0;
-        let rh: f32 = right.iter().sum::<f32>() + gap * 3.0;
-        ((72.0 + lh.max(rh) + 44.0).floor(), nm, ns, left, right)
-    }
-
     fn panel_target(&self) -> (i32, i32, i32) {
         let k = self.scale();
         let (_, ph) = self.panel_size;
@@ -413,53 +391,7 @@ impl App {
 
     fn render_panel(&mut self) {
         let Some(s) = self.stats.as_ref() else { return };
-        let th = self.theme;
-        let k = self.scale();
-        let (h, nm, ns, left_h, right_h) = Self::layout(s);
-        let (w, pad, gap) = (PANEL_W, 20.0, 14.0);
-        let cw = (w - 2.0 * pad - gap) / 2.0;
-
-        let mut c = Canvas::new(w, h, k, &self.fonts);
-        match &self.backdrop {
-            Some(bd) => c.backdrop(bd, 12.0),
-            None => c.rect(0.0, 0.0, w, h, [th.panel[0], th.panel[1], th.panel[2], 255], 12.0),
-        }
-        c.card(0.0, 0.0, w, h, th.panel, th.panel_border, 12.0);
-        header(&mut c, th, s, pad, w);
-        let top = 72.0;
-        let mut y = top;
-        hero(&mut c, th, s, pad, y, cw, left_h[0]);
-        y += left_h[0] + gap;
-        window_chart(&mut c, th, s, pad, y, cw, left_h[1]);
-        y += left_h[1] + gap;
-        tiles(&mut c, th, s, pad, y, cw);
-        let x = pad + cw + gap;
-        let mut y = top;
-        week(&mut c, th, s, x, y, cw, right_h[0]);
-        y += right_h[0] + gap;
-        mix(&mut c, th, s, x, y, cw, right_h[1]);
-        y += right_h[1] + gap;
-        models(&mut c, th, s, x, y, cw, right_h[2], nm);
-        y += right_h[2] + gap;
-        sessions(&mut c, th, s, x, y, cw, right_h[3], ns);
-        c.text(
-            pad,
-            h - 22.0,
-            "$ figures are API-list-price estimates, not your plan's billing  ·  Esc to close  ·  right-click for options",
-            10.0,
-            th.text3,
-            R,
-            "la",
-        );
-
-        let m = SHADOW_M;
-        let mut full = Canvas::new(w + 2.0 * m, h + 2.0 * m, k, &self.fonts);
-        for i in 0..16 {
-            let i = i as f32;
-            full.rect(m - i, m - i + 8.0, w + 2.0 * i, h + 2.0 * i, [0, 0, 0, 5], 12.0 + i);
-        }
-        let off = (m * k).round() as i32;
-        full.draw_at(&c.pm, off, off);
+        let full = draw_panel(&self.fonts, self.theme, s, self.scale(), self.backdrop.as_ref());
         self.panel_size = (full.pm.width() as i32, full.pm.height() as i32);
         self.panel_bgra = full.to_bgra(0);
     }
@@ -547,6 +479,22 @@ impl App {
     fn handle_menu(&mut self, cmd: usize) {
         match cmd {
             M_SHOW => self.toggle_panel(),
+            M_THEME_SYSTEM | M_THEME_DARK | M_THEME_LIGHT => {
+                self.cfg.cfg.theme = match cmd {
+                    M_THEME_DARK => "dark",
+                    M_THEME_LIGHT => "light",
+                    _ => "system",
+                }
+                .into();
+                self.cfg.save();
+                self.theme = resolve_theme(&self.cfg.cfg.theme);
+                self.render_readout();
+                if self.panel_open && self.anim.is_none() {
+                    self.render_panel();
+                    let (w, h) = self.panel_size;
+                    sys::layered_show(self.panel, &self.panel_bgra, w, h, self.panel_x, self.panel_y, 255);
+                }
+            }
             M_DOCK_LEFT | M_DOCK_RIGHT => {
                 self.cfg.cfg.dock = if cmd == M_DOCK_LEFT { "left" } else { "right" }.into();
                 self.cfg.save();
@@ -570,7 +518,9 @@ impl App {
 }
 
 fn show_menu(owner: HWND) {
-    let Some((dock_right, panel_open)) = with_app(|a| (a.cfg.cfg.dock == "right", a.panel_open)) else {
+    let Some((dock_right, panel_open, theme)) =
+        with_app(|a| (a.cfg.cfg.dock == "right", a.panel_open, a.cfg.cfg.theme.clone()))
+    else {
         return;
     };
     let startup = sys::startup_enabled();
@@ -586,6 +536,13 @@ fn show_menu(owner: HWND) {
         let _ = AppendMenuW(m, MF_SEPARATOR, 0, PCWSTR::null());
         let _ = AppendMenuW(m, MF_STRING | chk(!dock_right), M_DOCK_LEFT, w!("Dock next to Widgets button"));
         let _ = AppendMenuW(m, MF_STRING | chk(dock_right), M_DOCK_RIGHT, w!("Dock next to tray icons"));
+        if let Ok(sub) = CreatePopupMenu() {
+            let system = theme != "dark" && theme != "light";
+            let _ = AppendMenuW(sub, MF_STRING | chk(system), M_THEME_SYSTEM, w!("System"));
+            let _ = AppendMenuW(sub, MF_STRING | chk(theme == "dark"), M_THEME_DARK, w!("Dark"));
+            let _ = AppendMenuW(sub, MF_STRING | chk(theme == "light"), M_THEME_LIGHT, w!("Light"));
+            let _ = AppendMenuW(m, MF_POPUP, sub.0 as usize, w!("Theme"));
+        }
         let _ = AppendMenuW(m, MF_STRING | chk(startup), M_STARTUP, w!("Start with Windows"));
         let _ = AppendMenuW(m, MF_SEPARATOR, 0, PCWSTR::null());
         let _ = AppendMenuW(m, MF_STRING, M_TRANSCRIPTS, w!("Open transcripts folder"));
@@ -678,6 +635,151 @@ unsafe extern "system" fn panel_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARA
         }
         _ => DefWindowProcW(hwnd, msg, wp, lp),
     }
+}
+
+// ------------------------------------------------------- shared rendering --
+fn draw_readout<'a>(fonts: &'a Fonts, th: &Theme, s: &Stats, k: f32, hover: bool, open: bool) -> Canvas<'a> {
+    let line1 = fmt_tokens(if s.block_start.is_some() { s.block.all } else { s.today.all } as f64);
+    let line2 = if s.block_start.is_some() {
+        format!("{} left", fmt_left(s.block_left))
+    } else {
+        "idle · today".into()
+    };
+    let probe = Canvas::new(1.0, 1.0, k, fonts);
+    let tw = probe.tw(&line1, 13.0, SB).max(probe.tw(&line2, 11.0, R));
+    let (ring_d, spark_w) = (28.0, 62.0);
+    let w = (8.0 + ring_d + 10.0 + tw + 12.0 + spark_w + 10.0).ceil();
+    let mut c = Canvas::new(w, BAR_H, k, fonts);
+
+    if open {
+        c.rect(2.0, 4.0, w - 4.0, BAR_H - 8.0, th.active, 5.0);
+        c.rect(w / 2.0 - 8.0, BAR_H - 7.0, 16.0, 3.0, th.accent, 1.5);
+    } else if hover {
+        c.rect(2.0, 4.0, w - 4.0, BAR_H - 8.0, th.hover, 5.0);
+    }
+    let (cx, cy) = (8.0 + ring_d / 2.0, BAR_H / 2.0);
+    c.ring(cx, cy, ring_d / 2.0, 3.2, s.block_frac, th.accent, th.track);
+    c.spark(cx, cy, 6.2, if s.live() { th.accent } else { th.text3 });
+    let tx = 8.0 + ring_d + 10.0;
+    c.text(tx, cy - 1.0, &line1, 13.0, th.text1, SB, "ls");
+    c.text(tx, cy + 3.0, &line2, 11.0, th.text2, R, "lt");
+
+    // sparkline: output tokens per 3 minutes over the last hour
+    let (sx, base, sh) = (tx + tw + 12.0, cy + 10.0, 20.0);
+    let n = s.spark.len() as f32;
+    let bw = (spark_w - (n - 1.0)) / n;
+    let peak = (*s.spark.iter().max().unwrap_or(&0)).max(1) as f32;
+    c.line(sx, base + 0.5, sx + spark_w, base + 0.5, th.grid, 1.0);
+    for (i, v) in s.spark.iter().enumerate() {
+        if *v > 0 {
+            let bh = (sh * *v as f32 / peak).max(2.0);
+            c.bar_up(sx + i as f32 * (bw + 1.0), base, bw, bh, th.accent, 1.2);
+        }
+    }
+    c
+}
+
+fn panel_layout(s: &Stats) -> (f32, usize, usize, [f32; 3], [f32; 4]) {
+    let nm = s.models.len().clamp(1, 3);
+    let ns = s.sessions.len().clamp(1, 4);
+    let left = [160.0, 156.0, 2.0 * 82.0 + 12.0];
+    let right = [164.0, 124.0, 46.0 + 30.0 * nm as f32, 46.0 + 38.0 * ns as f32];
+    let gap = 14.0;
+    let lh: f32 = left.iter().sum::<f32>() + gap * 2.0;
+    let rh: f32 = right.iter().sum::<f32>() + gap * 3.0;
+    ((72.0 + lh.max(rh) + 44.0).floor(), nm, ns, left, right)
+}
+
+/// The whole panel window image: shadow margin + glass panel + sections.
+fn draw_panel<'a>(fonts: &'a Fonts, th: &Theme, s: &Stats, k: f32, backdrop: Option<&Pixmap>) -> Canvas<'a> {
+    let (h, nm, ns, left_h, right_h) = panel_layout(s);
+    let (w, pad, gap) = (PANEL_W, 20.0, 14.0);
+    let cw = (w - 2.0 * pad - gap) / 2.0;
+
+    let mut c = Canvas::new(w, h, k, fonts);
+    match backdrop {
+        Some(bd) => c.backdrop(bd, 12.0),
+        None => c.rect(0.0, 0.0, w, h, [th.panel[0], th.panel[1], th.panel[2], 255], 12.0),
+    }
+    c.card(0.0, 0.0, w, h, th.panel, th.panel_border, 12.0);
+    header(&mut c, th, s, pad, w);
+    let top = 72.0;
+    let mut y = top;
+    hero(&mut c, th, s, pad, y, cw, left_h[0]);
+    y += left_h[0] + gap;
+    window_chart(&mut c, th, s, pad, y, cw, left_h[1]);
+    y += left_h[1] + gap;
+    tiles(&mut c, th, s, pad, y, cw);
+    let x = pad + cw + gap;
+    let mut y = top;
+    week(&mut c, th, s, x, y, cw, right_h[0]);
+    y += right_h[0] + gap;
+    mix(&mut c, th, s, x, y, cw, right_h[1]);
+    y += right_h[1] + gap;
+    models(&mut c, th, s, x, y, cw, right_h[2], nm);
+    y += right_h[2] + gap;
+    sessions(&mut c, th, s, x, y, cw, right_h[3], ns);
+    c.text(
+        pad,
+        h - 22.0,
+        "$ figures are API-list-price estimates, not your plan's billing  ·  Esc to close  ·  right-click for options",
+        10.0,
+        th.text3,
+        R,
+        "la",
+    );
+
+    let m = SHADOW_M;
+    let mut full = Canvas::new(w + 2.0 * m, h + 2.0 * m, k, fonts);
+    for i in 0..16 {
+        let i = i as f32;
+        full.rect(m - i, m - i + 8.0, w + 2.0 * i, h + 2.0 * i, [0, 0, 0, 5], 12.0 + i);
+    }
+    let off = (m * k).round() as i32;
+    full.draw_at(&c.pm, off, off);
+    full
+}
+
+// ------------------------------------------------------ README screenshots --
+/// `claude-usage-widget.exe --screenshots <dir>` renders the readout and panel
+/// with made-up sample data (no real projects or usage) to PNG files.
+pub fn render_screenshots(dir: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let fonts = Fonts::load();
+    let s = crate::usage::sample_stats();
+    let k = 2.0; // crisp on high-DPI displays
+    for (name, th, bar_bg, wall) in [
+        ("dark", &DARK, [32u8, 32, 34, 255], [(58u8, 36u8, 92u8), (20, 70, 110)]),
+        ("light", &LIGHT, [236, 236, 238, 255], [(196, 214, 240), (238, 214, 232)]),
+    ] {
+        // readout on a taskbar-coloured strip
+        let ro = draw_readout(&fonts, th, &s, k, false, false);
+        let strip_w = ro.pm.width() as f32 / k + 24.0;
+        let mut strip = Canvas::new(strip_w, BAR_H, k, &fonts);
+        strip.rect(0.0, 0.0, strip_w, BAR_H, bar_bg, 0.0);
+        strip.draw_at(&ro.pm, (12.0 * k) as i32, 0);
+        strip.pm.save_png(dir.join(format!("readout-{name}.png"))).map_err(std::io::Error::other)?;
+
+        // panel over a soft "wallpaper" so the glass has something to blur
+        let (bw, bh) = (96usize, 80usize);
+        let mut wallpaper = vec![0u8; bw * bh * 4];
+        for y in 0..bh {
+            for x in 0..bw {
+                let t = (x + y) as f32 / (bw + bh) as f32;
+                let blob = (-(((x as f32 - 70.0).powi(2) + (y as f32 - 20.0).powi(2)) / 300.0)).exp();
+                let mix = |a: u8, b: u8| a as f32 * (1.0 - t) + b as f32 * t;
+                let i = (y * bw + x) * 4;
+                wallpaper[i + 2] = (mix(wall[0].0, wall[1].0) + 120.0 * blob).min(255.0) as u8;
+                wallpaper[i + 1] = (mix(wall[0].1, wall[1].1) + 60.0 * blob).min(255.0) as u8;
+                wallpaper[i] = mix(wall[0].2, wall[1].2) as u8;
+                wallpaper[i + 3] = 255;
+            }
+        }
+        let backdrop = crate::draw::blurred_backdrop(&wallpaper, bw, bh, 1);
+        let panel = draw_panel(&fonts, th, &s, k, backdrop.as_ref());
+        panel.pm.save_png(dir.join(format!("panel-{name}.png"))).map_err(std::io::Error::other)?;
+    }
+    Ok(())
 }
 
 // --------------------------------------------------------- panel sections --
@@ -901,9 +1003,9 @@ fn sessions(c: &mut Canvas, th: &Theme, s: &Stats, x: f32, y: f32, w: f32, h: f3
         return;
     }
     for (i, ss) in s.sessions.iter().take(ns).enumerate() {
-        let ry = y + 44.0 + i as f32 * 36.0;
+        let ry = y + 44.0 + i as f32 * 38.0;
         if i > 0 {
-            c.line(x + 16.0, ry - 6.0, x + w - 16.0, ry - 6.0, th.grid, 1.0);
+            c.line(x + 16.0, ry - 4.0, x + w - 16.0, ry - 4.0, th.grid, 1.0);
         }
         let name = c.fit(&pretty_project(&ss.proj), 12.0, SB, w - 140.0);
         c.text(x + 16.0, ry, &name, 12.0, th.text1, SB, "la");

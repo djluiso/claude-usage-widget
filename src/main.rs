@@ -24,6 +24,14 @@ fn main() {
             .and_then(|mut f| std::io::Write::write_all(&mut f, msg.as_bytes()));
     }));
 
+    // `--screenshots <dir>`: render README images from sample data, then exit
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|a| a == "--screenshots") {
+        let dir = args.get(i + 1).map(String::as_str).unwrap_or("docs");
+        let _ = ui::render_screenshots(std::path::Path::new(dir));
+        return;
+    }
+
     unsafe {
         // one instance per user session
         let _mutex = CreateMutexW(None, true, w!("Local\\ClaudeUsageWidget"));

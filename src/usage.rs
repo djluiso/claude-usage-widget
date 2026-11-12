@@ -342,6 +342,75 @@ impl Store {
     }
 }
 
+/// Made-up data for README screenshots (`--screenshots`).
+pub fn sample_stats() -> Stats {
+    let now = Utc::now();
+    let start = now - Duration::minutes(2 * 60 + 18);
+    let block_left = (BLOCK_HOURS * 3600 - (2 * 60 + 18) * 60) as f64;
+    let mut wbins = vec![0u64; (BLOCK_HOURS * 6) as usize];
+    for (i, v) in [3200, 8100, 12400, 6100, 0, 2400, 9800, 15200, 11800, 7400, 13900, 4600, 9100, 6800]
+        .iter()
+        .enumerate()
+    {
+        wbins[i] = *v;
+    }
+    let spark = vec![
+        420, 0, 880, 1300, 610, 0, 0, 1900, 2600, 1200, 740, 0, 1650, 2300, 3100, 1800, 900, 2700, 3400, 2100,
+    ];
+    let sum = |inp, out, cw, cr, cost, n| Sum { inp, out, cw, cr, all: inp + out + cw + cr, cost, n };
+    let today_local = Local::now().date_naive();
+    let costs = [3.20, 0.0, 5.84, 9.12, 4.41, 7.63, 11.27];
+    let days = costs
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let back = 6 - i as i64;
+            Day {
+                label: if back == 0 {
+                    "Today".into()
+                } else {
+                    (today_local - Duration::days(back)).format("%a").to_string()
+                },
+                cost: *c,
+            }
+        })
+        .collect();
+    let session = |proj: &str, mins: i64, all, cost, active| Session {
+        proj: proj.into(),
+        last: now - Duration::minutes(mins),
+        all,
+        cost,
+        active,
+    };
+    Stats {
+        now,
+        block_start: Some(start),
+        block_left,
+        block_frac: 1.0 - block_left / (BLOCK_HOURS * 3600) as f64,
+        block: sum(386, 110_800, 214_500, 4_498_000, 6.94, 87),
+        wbins,
+        cur_bin: 13,
+        spark,
+        today: sum(612, 168_300, 341_200, 7_402_000, 11.27, 142),
+        hour: sum(144, 31_900, 58_700, 1_892_000, 2.03, 26),
+        burn: 2860.0,
+        days,
+        models: vec![
+            Model { name: "opus-5-5".into(), cost: 9.41 },
+            Model { name: "sonnet-5-5".into(), cost: 1.52 },
+            Model { name: "haiku-5-5".into(), cost: 0.34 },
+        ],
+        sessions: vec![
+            session("C--dev-webapp", 0, 3_910_000, 5.62, true),
+            session("C--dev-backend", 26, 1_480_000, 2.17, false),
+            session("C--dev-dotfiles", 190, 402_000, 0.61, false),
+            session("C--dev-pipeline", 1500, 2_260_000, 3.05, false),
+        ],
+        active: 1,
+        last: Some(now - Duration::seconds(20)),
+    }
+}
+
 // ---------------------------------------------------------------- format ---
 pub fn fmt_tokens(n: f64) -> String {
     if n >= 1e9 {

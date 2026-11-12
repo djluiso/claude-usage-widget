@@ -14,6 +14,8 @@ pub type Price = [f64; 4];
 pub struct Config {
     /// "left" = next to the Widgets button, "right" = next to the tray icons.
     pub dock: String,
+    /// "system" (follow Windows light/dark mode), "dark" or "light".
+    pub theme: String,
     /// How often transcripts are rescanned, in milliseconds.
     pub refresh_ms: u32,
     /// API-equivalent price estimates, matched by substring of the model id.
@@ -27,7 +29,7 @@ impl Default for Config {
         prices.insert("sonnet".into(), [3.00, 15.00, 3.75, 0.30]);
         prices.insert("haiku".into(), [1.00, 5.00, 1.25, 0.10]);
         prices.insert("fable".into(), [5.00, 25.00, 6.25, 0.50]);
-        Self { dock: "left".into(), refresh_ms: 3000, prices }
+        Self { dock: "left".into(), theme: "system".into(), refresh_ms: 3000, prices }
     }
 }
 
