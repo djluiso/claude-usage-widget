@@ -55,6 +55,20 @@ impl Fonts {
         }
     }
 
+    /// Inter read from the repo's assets/fonts, so README renders of the
+    /// macOS/Linux look use the same font on any OS. None outside the repo.
+    pub fn inter_from_assets() -> Option<Fonts> {
+        let f = |name: &str| {
+            std::fs::read(format!("assets/fonts/{name}"))
+                .ok()
+                .and_then(|b| FontVec::try_from_vec(b).ok())
+        };
+        Some(Fonts {
+            regular: f("Inter-Regular.ttf")?,
+            semibold: f("Inter-SemiBold.ttf")?,
+        })
+    }
+
     fn get(&self, w: Weight) -> &FontVec {
         match w {
             Weight::Regular => &self.regular,

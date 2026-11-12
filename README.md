@@ -1,8 +1,16 @@
 # Claude Code Usage Widget
 
-A Windows 11 taskbar readout that shows your Claude Code usage in near real time.
-Click it to slide in a detail panel. It's a single native `.exe` (about 1 MB)
-written in Rust, with no runtime to install.
+A live readout of your Claude Code usage, with a detail drawer one click away:
+on the **Windows 11 taskbar**, in the **macOS menu bar**, or in the
+**Ubuntu / Linux tray**. It's a small native app written in Rust, with no
+runtime to install.
+
+| | Windows 11 | macOS | Ubuntu / Linux |
+|---|---|---|---|
+| Readout | On the taskbar, next to the Widgets button | Menu bar: ring icon, sparkline and token count | Tray icon with a tooltip |
+| Screenshot | [At the top](#claude-code-usage-widget) | [macOS](#macos) | [Ubuntu](#ubuntu) |
+| Drawer | Slides in from the screen edge, frosted glass | Drops down below the menu bar | Opens as a window |
+| Status | Tested | [Not tested on a real Mac](#macos-1) | [Not tested on a real Ubuntu machine](#ubuntu--linux) |
 
 <p align="center">
   <picture>
@@ -11,14 +19,14 @@ written in Rust, with no runtime to install.
   </picture>
 </p>
 
-<p align="center"><sub>Sample data on an illustrative desktop. Images follow your GitHub light/dark theme. <a href="#screenshots">More screenshots</a></sub></p>
+<p align="center"><sub>Windows 11, sample data. Images follow your GitHub light/dark theme. <a href="#screenshots">macOS and Ubuntu screenshots</a></sub></p>
 
-- **Taskbar readout:** sits next to the Widgets (weather) button, or by the tray.
-  It shows three things:
+- **Readout:** on the Windows taskbar (next to the Widgets button, or by the
+  tray), in the macOS menu bar, or in the Linux tray. It shows:
   - a ring for how much of the 5-hour usage window has passed
   - tokens used in the window and the time left until it resets
-  - a sparkline of output tokens over the last 60 minutes
-- **Drawer:** a frosted-glass panel that slides in from the screen edge. It shows:
+  - a sparkline of output tokens over the last 60 minutes (Windows and macOS)
+- **Drawer:** click the readout to open it. It shows:
   - a gauge for the 5-hour window and its activity chart
   - stat tiles: burn rate, last hour, today, and cache hit rate
   - cost per day for the last 7 days
@@ -32,52 +40,56 @@ or `$CLAUDE_CONFIG_DIR/projects`). Nothing is sent anywhere.
 
 ## Screenshots
 
-All screenshots use sample data and follow your GitHub light/dark theme.
+All screenshots use sample data and follow your GitHub light/dark theme. The
+widget in each one is drawn by the app's own code; the desktop around it (bars,
+docks, app icons) is a mock-up.
 
-**On the taskbar.** The readout sits next to the Widgets (weather) button,
-using the same glass as the taskbar.
+### Windows 11
+
+The drawer open is shown [at the top](#claude-code-usage-widget). With it
+closed, the readout sits on the taskbar next to the Widgets (weather) button,
+in the taskbar's own glass:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/taskbar-dark.png">
   <img src="docs/taskbar-light.png" alt="Windows 11 taskbar with the usage readout next to the weather button">
 </picture>
 
-**Readout close-up.** The ring shows how much of the 5-hour window has passed,
-next to the tokens used, the time left, and output over the last hour.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/readout-dark.png">
-  <img src="docs/readout-light.png" alt="Taskbar readout: ring gauge, tokens used in the 5-hour window, time left, and a sparkline" width="205">
-</picture>
-
-**Drawer open.** Click the readout and the drawer slides in above the
-taskbar. This is the whole screen as you'd see it.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/desktop-panel-dark.png">
-  <img src="docs/desktop-panel-light.png" alt="Full Windows 11 desktop with the usage drawer open above the taskbar readout">
-</picture>
-
-**Drawer close-up.**
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/panel-dark.png">
-    <img src="docs/panel-light.png" alt="Drawer: 5-hour window gauge, activity chart, stat tiles, 7-day history, token mix, models and recent sessions" width="808">
-  </picture>
-</p>
-
-**Settings.** Click the gear at the drawer's top right. Click it again, or
-press **Esc**, to go back.
+Click the gear at the drawer's top right for **Settings**. Click it again, or
+press **Esc**, to go back:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/desktop-settings-dark.png">
-  <img src="docs/desktop-settings-light.png" alt="The drawer showing Settings: theme, position, start with Windows, refresh interval and the built-in price table">
+  <img src="docs/desktop-settings-light.png" alt="Windows 11 desktop with the drawer showing Settings: theme, position, start with Windows, refresh interval and the built-in price table">
+</picture>
+
+### macOS
+
+The menu-bar item shows the ring, the sparkline and the token count. Click it
+and the drawer drops down below it. (macOS draws the item's text in its own
+system font.) [Not tested on a real Mac](#macos-1).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/macos-dark.png">
+  <img src="docs/macos-light.png" alt="macOS desktop with the usage item in the menu bar and the drawer dropped down below it">
+</picture>
+
+### Ubuntu
+
+The tray icon sits in the top bar; hover over it for the token count. Click
+it and the drawer opens where GNOME places new windows, usually the centre of
+the screen. [Not tested on a real Ubuntu machine](#ubuntu--linux).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/ubuntu-dark.png">
+  <img src="docs/ubuntu-light.png" alt="Ubuntu desktop with the usage icon in the top bar and the drawer open in the middle of the screen">
 </picture>
 
 ## Install
 
-Download one of these from the [latest release](https://github.com/djluiso/claude-usage-widget/releases/latest):
+Everything is on the [latest release](https://github.com/djluiso/claude-usage-widget/releases/latest) page.
+
+### Windows
 
 | File | What it is |
 |---|---|
@@ -89,6 +101,58 @@ Both installers put the app in `%LOCALAPPDATA%\Programs\Claude Usage Widget`.
 To uninstall, go to **Settings → Apps → Installed apps**.
 
 Requires Windows 11 (x64).
+
+### macOS
+
+> [!WARNING]
+> **Not tested on a real Mac.** I've only used this widget myself on Windows.
+> The macOS version is built, checked and screenshotted automatically on
+> GitHub's macOS machines, but I haven't tried it personally on a real Mac.
+> If something doesn't work, please
+> [open an issue](https://github.com/djluiso/claude-usage-widget/issues).
+
+1. Download `ClaudeUsageWidget-<version>-macos.dmg` (one app for Apple silicon
+   and Intel Macs, macOS 11 or later).
+2. Open it and drag **Claude Usage Widget** to **Applications**.
+3. Open it from Applications. The app isn't notarized by Apple (that needs a
+   paid developer account), so the first time macOS says it can't verify it:
+   - click **Done**, open **System Settings → Privacy & Security**, scroll
+     down and click **Open Anyway**; or
+   - in Terminal, run
+     `xattr -dr com.apple.quarantine "/Applications/Claude Usage Widget.app"`.
+
+The readout appears in the menu bar at the top right. There's no Dock icon.
+Click it to drop down the drawer. Turn on **Start at login** in Settings.
+
+### Ubuntu / Linux
+
+> [!WARNING]
+> **Not tested on a real Ubuntu machine.** I've only used this widget myself
+> on Windows. The Linux version is built, checked and screenshotted
+> automatically on GitHub's Ubuntu machines, but I haven't tried it personally
+> on a real Ubuntu PC. If something doesn't work, please
+> [open an issue](https://github.com/djluiso/claude-usage-widget/issues).
+
+For Ubuntu 24.04 or later (x86-64):
+
+```sh
+sudo apt install ./claude-usage-widget_<version>_amd64.deb
+claude-usage-widget &
+```
+
+Or use `claude-usage-widget-<version>-linux-x86_64.tar.gz`, which holds just
+the binary (needs GTK 4.12+).
+
+- The readout is a tray icon. Ubuntu shows tray icons out of the box; KDE
+  Plasma, Cinnamon (Linux Mint) and XFCE do too. On plain GNOME (for example
+  Fedora), install the *AppIndicator and KStatusNotifierItem Support*
+  extension first.
+- Click the tray icon (or use its menu) to open the drawer. Hover over it for
+  the token count.
+- Linux desktops (Wayland) don't let apps choose where their windows open, so
+  the drawer opens where the desktop puts new windows, not next to the icon.
+- With no tray available, the drawer opens on its own when the app starts,
+  and launching the app again opens it on **Settings**.
 
 ## Use
 
@@ -104,7 +168,10 @@ Requires Windows 11 (x64).
 
 ## Start with Windows
 
-You can turn this on in two ways:
+(On macOS and Linux it's the **Start at login** toggle in Settings. It adds a
+LaunchAgent on macOS and an `~/.config/autostart` entry on Linux.)
+
+On Windows you can turn this on in two ways:
 
 - In the setup wizard, tick **Start with Windows**.
 - In the widget, use the **Start with Windows** toggle in **Settings** (the
@@ -133,12 +200,18 @@ stays readable whatever the drawer theme is.
 
 Click the gear at the drawer's top right. Changes are saved as you make them.
 
-- **General:** theme, position (next to the Widgets button or the tray icons),
-  **Start with Windows**, and the refresh interval (1, 3, 5 or 10 seconds).
+- **General:** theme, position (Windows only: next to the Widgets button or
+  the tray icons), **Start with Windows** / **Start at login**, and the
+  refresh interval (1, 3, 5 or 10 seconds).
 - **Prices:** a read-only table of the built-in prices (see below).
 - **Open transcripts folder** and **Quit widget**.
 
-Settings are stored in `%LOCALAPPDATA%\ClaudeUsageWidget\config.json`:
+Settings are stored in `config.json` in:
+
+- Windows: `%LOCALAPPDATA%\ClaudeUsageWidget`
+- macOS: `~/Library/Application Support/ClaudeUsageWidget`
+- Linux: `~/.config/claude-usage-widget`
+
 
 ```json
 {
@@ -169,7 +242,26 @@ When Anthropic changes prices, a new release updates the table
 
 ## Build from source
 
-You need these tools:
+Every platform needs Rust (stable). Useful switches for any build:
+`--demo` shows sample data, `--open` opens the drawer at start, `--settings`
+opens it on Settings, and `--screenshots <dir>` renders the README images.
+
+**macOS:**
+
+```sh
+cargo build --release
+installer/macos/build-app.sh 1.0.0   # universal .app and .dmg in dist/
+```
+
+**Ubuntu:**
+
+```sh
+sudo apt install libgtk-4-dev libdbus-1-dev pkg-config
+cargo build --release
+cargo install cargo-deb && cargo deb   # .deb package
+```
+
+**Windows.** You need these tools:
 
 - Rust (stable, MSVC toolchain)
 - the Visual Studio C++ build tools
@@ -187,14 +279,22 @@ wix build installer\widget.wxs -arch x64 -d Version=1.0.0 -o dist\ClaudeUsageWid
 ## Releasing
 
 Releases are automatic. The [CI & Release workflow](.github/workflows/release.yml)
-runs on every push and pull request.
+runs on every push and pull request, on Windows, macOS and Ubuntu.
 
 1. **Checks:** `cargo fmt --check`, `cargo clippy -D warnings` and
-   `cargo test`.
-2. **Release:** on a push to `main` that passes the checks, if the `version` in
-   `Cargo.toml` has no GitHub Release yet, the workflow builds the setup `.exe`,
-   the `.msi`, the portable `.zip` and `SHA256SUMS.txt`. It then tags the commit
-   `v<version>` and publishes the release.
+   `cargo test`, on all three systems.
+2. **Preview:** runs the real app with sample data on GitHub's macOS and Ubuntu
+   machines and saves screenshots, plus the README renders, as a downloadable
+   `preview-macOS` / `preview-Linux` artifact on the run's page. This is how
+   the macOS and Linux builds get looked at without owning those machines.
+3. **Release:** on a push to `main` that passes the checks, if the `version` in
+   `Cargo.toml` has no GitHub Release yet, the workflow builds:
+   - Windows: the setup `.exe`, the `.msi` and the portable `.zip`
+   - macOS: the `.dmg`
+   - Linux: the `.deb` and the `.tar.gz`
+
+   plus `SHA256SUMS.txt`. It then tags the commit `v<version>` and publishes
+   the release.
 
 So to ship, bump `version` in `Cargo.toml` (and run `cargo build` so
 `Cargo.lock` updates), commit, and push. Commits that don't change the version
@@ -217,8 +317,16 @@ cargo test
   of the taskbar. Windows 11 has no public API for adding items to the taskbar.
   The widget finds the Widgets button through UI Automation and sets the
   taskbar as the window's owner, so it stays above the taskbar.
+- **macOS:** the readout is a menu-bar item ([tray-icon](https://github.com/tauri-apps/tray-icon)),
+  and the drawer is a borderless window ([tao](https://github.com/tauri-apps/tao))
+  whose image is shown through a Core Animation layer, keeping its
+  transparency.
+- **Linux:** the tray icon is a StatusNotifierItem ([ksni](https://github.com/iovxw/ksni)),
+  and the drawer is a GTK 4 window.
 - **Drawing:** everything is drawn with [tiny-skia](https://github.com/RazrFalcon/tiny-skia)
-  and [ab_glyph](https://github.com/alexheretic/ab-glyph), using Segoe UI.
-  Both windows are shown through `UpdateLayeredWindow` with per-pixel alpha,
+  and [ab_glyph](https://github.com/alexheretic/ab-glyph), so it looks the same
+  everywhere. Windows uses Segoe UI; macOS and Linux use the bundled
+  [Inter](https://rsms.me/inter/) font (SIL Open Font License). On Windows,
+  both windows are shown through `UpdateLayeredWindow` with per-pixel alpha,
   so the translucent taskbar glass shows through. The panel's glass effect is
   a blurred snapshot of the screen behind it, taken when it opens.

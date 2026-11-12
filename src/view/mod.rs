@@ -288,55 +288,6 @@ pub fn render_screenshots(dir: &std::path::Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     let fonts = Fonts::load();
     let s = crate::usage::sample_stats();
-    let k = 2.0; // crisp on high-DPI displays
-    for (name, th, bar_bg, wall) in [
-        (
-            "dark",
-            &DARK,
-            [32u8, 32, 34, 255],
-            [(58u8, 36u8, 92u8), (20, 70, 110)],
-        ),
-        (
-            "light",
-            &LIGHT,
-            [236, 236, 238, 255],
-            [(196, 214, 240), (238, 214, 232)],
-        ),
-    ] {
-        // readout on a taskbar-coloured strip
-        let ro = draw_readout(&fonts, th, &s, k, false, false);
-        let strip_w = ro.pm.width() as f32 / k + 24.0;
-        let mut strip = Canvas::new(strip_w, BAR_H, k, &fonts);
-        strip.rect(0.0, 0.0, strip_w, BAR_H, bar_bg, 0.0);
-        strip.draw_at(&ro.pm, (12.0 * k) as i32, 0);
-        strip
-            .pm
-            .save_png(dir.join(format!("readout-{name}.png")))
-            .map_err(std::io::Error::other)?;
-
-        // panel over a soft "wallpaper" so the glass has something to blur
-        let (bw, bh) = (96usize, 80usize);
-        let mut wallpaper = vec![0u8; bw * bh * 4];
-        for y in 0..bh {
-            for x in 0..bw {
-                let t = (x + y) as f32 / (bw + bh) as f32;
-                let blob =
-                    (-(((x as f32 - 70.0).powi(2) + (y as f32 - 20.0).powi(2)) / 300.0)).exp();
-                let mix = |a: u8, b: u8| a as f32 * (1.0 - t) + b as f32 * t;
-                let i = (y * bw + x) * 4;
-                wallpaper[i + 2] = (mix(wall[0].0, wall[1].0) + 120.0 * blob).min(255.0) as u8;
-                wallpaper[i + 1] = (mix(wall[0].1, wall[1].1) + 60.0 * blob).min(255.0) as u8;
-                wallpaper[i] = mix(wall[0].2, wall[1].2) as u8;
-                wallpaper[i + 3] = 255;
-            }
-        }
-        let backdrop = crate::draw::blurred_backdrop(&wallpaper, bw, bh, 1);
-        let (panel, _) = draw_panel(&fonts, th, &s, k, backdrop.as_ref(), None);
-        panel
-            .pm
-            .save_png(dir.join(format!("panel-{name}.png")))
-            .map_err(std::io::Error::other)?;
-    }
     shots::render_scenes(dir, &fonts, &s)
 }
 
