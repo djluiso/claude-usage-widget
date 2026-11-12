@@ -98,9 +98,33 @@ pub struct Stats {
     pub sessions: Vec<Session>,
     pub active: usize,
     pub last: Option<DateTime<Utc>>,
+    /// Plan limits from Anthropic (see `limits.rs`).
+    pub limits: crate::limits::Snapshot,
 }
 
 impl Stats {
+    /// Use Anthropic's numbers for the session when we have them: the ring
+    /// becomes "% of the session limit used", and the reset time is exact
+    /// (it also counts the phone, web and other computers).
+    pub fn apply_limits(&mut self, snap: crate::limits::Snapshot) {
+        if let Some(w) = snap.limits.as_ref().and_then(|l| l.session.as_ref()) {
+            let left = (w.resets_at - self.now).num_seconds() as f64;
+            if left > 0.0 {
+                self.block_left = left;
+                self.block_frac = (w.percent / 100.0).clamp(0.0, 1.0);
+                self.block_start = Some(w.resets_at - Duration::hours(BLOCK_HOURS));
+            }
+        }
+        self.limits = snap;
+    }
+
+    /// Session percentage from Anthropic, if known.
+    pub fn session_percent(&self) -> Option<f64> {
+        let l = self.limits.limits.as_ref()?;
+        let w = l.session.as_ref()?;
+        (w.resets_at > self.now).then_some(w.percent)
+    }
+
     pub fn live(&self) -> bool {
         self.last
             .is_some_and(|l| (self.now - l).num_seconds() < 120)
@@ -414,6 +438,7 @@ impl Store {
             sessions,
             active,
             last: recs.last().map(|r| r.t),
+            limits: Default::default(),
         }
     }
 }
@@ -471,7 +496,7 @@ pub fn sample_stats() -> Stats {
         cost,
         active,
     };
-    Stats {
+    let mut s = Stats {
         now,
         block_start: Some(start),
         block_left,
@@ -506,7 +531,10 @@ pub fn sample_stats() -> Stats {
         ],
         active: 1,
         last: Some(now - Duration::seconds(20)),
-    }
+        limits: Default::default(),
+    };
+    s.apply_limits(crate::limits::sample(now));
+    s
 }
 
 // ---------------------------------------------------------------- format ---

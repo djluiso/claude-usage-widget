@@ -41,6 +41,7 @@ impl Drawer {
         let (bgra, w, h) = app.render_drawer(k as f32);
         self.layer.set_image(bgra, w, h, k);
         if !self.open {
+            app.drawer_opening();
             self.place(w as f64, k);
             self.window.set_visible(true);
             self.window.set_focus();

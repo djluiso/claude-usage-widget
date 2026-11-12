@@ -173,10 +173,10 @@ pub(crate) fn draw_readout<'a>(
     c
 }
 
-pub(crate) fn panel_layout(s: &Stats) -> (f32, usize, usize, [f32; 3], [f32; 4]) {
+pub(crate) fn panel_layout(s: &Stats) -> (f32, usize, usize, [f32; 4], [f32; 4]) {
     let nm = s.models.len().clamp(1, 3);
     let ns = s.sessions.len().clamp(1, 4);
-    let left = [160.0, 156.0, 2.0 * 82.0 + 12.0];
+    let left = [160.0, 156.0, 2.0 * 82.0 + 12.0, LIMITS_H];
     let right = [
         164.0,
         124.0,
@@ -184,7 +184,7 @@ pub(crate) fn panel_layout(s: &Stats) -> (f32, usize, usize, [f32; 3], [f32; 4])
         46.0 + 38.0 * ns as f32,
     ];
     let gap = 14.0;
-    let lh: f32 = left.iter().sum::<f32>() + gap * 2.0;
+    let lh: f32 = left.iter().sum::<f32>() + gap * 3.0;
     let rh: f32 = right.iter().sum::<f32>() + gap * 3.0;
     let body = lh.max(rh).max(settings::SETTINGS_BODY_H);
     ((72.0 + body + 44.0).floor(), nm, ns, left, right)
@@ -240,6 +240,8 @@ pub(crate) fn draw_panel<'a>(
     window_chart(&mut c, th, s, pad, y, cw, left_h[1]);
     y += left_h[1] + gap;
     tiles(&mut c, th, s, pad, y, cw);
+    y += left_h[2] + gap;
+    plan_limits(&mut c, th, s, pad, y, cw, left_h[3]);
     let x = pad + cw + gap;
     let mut y = top;
     week(&mut c, th, s, x, y, cw, right_h[0]);
@@ -385,7 +387,10 @@ fn hero(c: &mut Canvas, th: &Theme, s: &Stats, x: f32, y: f32, w: f32, h: f32) {
     if let Some(st) = s.block_start {
         let st = st.with_timezone(&Local);
         let en = st + CDuration::hours(BLOCK_HOURS);
-        let t = format!("{} → resets {}", st.format("%H:%M"), en.format("%H:%M"));
+        let t = match s.session_percent() {
+            Some(p) => format!("{p:.0}% of session used  ·  resets {}", en.format("%H:%M")),
+            None => format!("{} → resets {}", st.format("%H:%M"), en.format("%H:%M")),
+        };
         c.text(tx, y + 114.0, &t, 11.0, th.text3, R, "la");
     }
     let t = format!(
@@ -395,6 +400,106 @@ fn hero(c: &mut Canvas, th: &Theme, s: &Stats, x: f32, y: f32, w: f32, h: f32) {
         if s.active == 1 { "" } else { "s" }
     );
     c.text(tx, y + 132.0, &t, 11.0, th.text3, R, "la");
+}
+
+const LIMITS_H: f32 = 150.0;
+
+/// "Plan limits": the session and weekly numbers Claude Code's `/usage`
+/// shows, fetched from Anthropic (they include the phone, web and other
+/// computers, which the transcripts can't see).
+fn plan_limits(c: &mut Canvas, th: &Theme, s: &Stats, x: f32, y: f32, w: f32, h: f32) {
+    use crate::limits::Status;
+    let snap = &s.limits;
+    let sub = match &snap.status {
+        Status::Ok | Status::Loading if snap.limits.is_some() => {
+            let at = snap.limits.as_ref().map(|l| l.fetched_at);
+            match at {
+                Some(t) => format!("from Anthropic · {}", fmt_ago((s.now - t).num_seconds())),
+                None => "from Anthropic".into(),
+            }
+        }
+        Status::Loading => "checking…".into(),
+        Status::Off => "off".into(),
+        Status::NoLogin => "no Claude login".into(),
+        Status::Expired => "login expired".into(),
+        Status::Failed(e) => format!("couldn't update ({e})"),
+        Status::Ok => String::new(),
+    };
+    card(c, th, x, y, w, h, "Plan limits", Some(&sub));
+    let Some(l) = &snap.limits else {
+        let msg: &[&str] = match &snap.status {
+            Status::Off => &[
+                "Turn on \"Plan limits\" in Settings to see the session",
+                "and weekly limits Claude Code's /usage shows.",
+            ],
+            Status::NoLogin => &[
+                "Sign in to Claude Code on this computer (Pro or Max)",
+                "to see your session and weekly limits here.",
+            ],
+            Status::Expired => &[
+                "Claude Code's saved login has expired. It renews",
+                "the next time you use Claude Code.",
+            ],
+            Status::Loading => &["Asking Anthropic for your plan limits…"],
+            _ => &[
+                "Couldn't reach Anthropic. The 5-hour window above",
+                "is estimated from this computer's transcripts.",
+            ],
+        };
+        for (i, line) in msg.iter().enumerate() {
+            c.text(
+                x + 16.0,
+                y + 52.0 + i as f32 * 18.0,
+                line,
+                11.0,
+                th.text3,
+                R,
+                "la",
+            );
+        }
+        return;
+    };
+    let mut rows: Vec<(String, &crate::limits::Window, &str)> = Vec::new();
+    if let Some(w) = &l.session {
+        rows.push(("Session".into(), w, "%H:%M"));
+    }
+    if let Some(w) = &l.weekly {
+        rows.push(("Weekly".into(), w, "%a %H:%M"));
+    }
+    if let Some((name, w)) = l.scoped.first() {
+        rows.push((format!("{name} weekly"), w, "%a %H:%M"));
+    }
+    let (lx, bx, rx) = (x + 16.0, x + 104.0, x + w - 16.0);
+    let bw = (rx - 112.0) - bx;
+    for (i, (label, win, fmt)) in rows.iter().take(3).enumerate() {
+        let ry = y + 50.0 + i as f32 * 26.0;
+        c.text(lx, ry, label, 11.0, th.text2, R, "lm");
+        let frac = (win.percent / 100.0).clamp(0.0, 1.0) as f32;
+        c.rect(bx, ry - 3.0, bw, 6.0, th.track, 3.0);
+        if frac > 0.0 {
+            c.rect(bx, ry - 3.0, (bw * frac).max(6.0), 6.0, th.accent, 3.0);
+        }
+        let when = win.resets_at.with_timezone(&Local).format(fmt).to_string();
+        c.text(
+            rx,
+            ry,
+            &format!("{:.0}%  ·  {when}", win.percent),
+            11.0,
+            th.text1,
+            R,
+            "rm",
+        );
+    }
+    if !l.breakdown.is_empty() {
+        let parts: Vec<String> = l
+            .breakdown
+            .iter()
+            .map(|(n, p)| format!("{n} {p}%"))
+            .collect();
+        let t = format!("This week: {}", parts.join("  ·  "));
+        let t = c.fit(&t, 10.0, R, w - 32.0);
+        c.text(lx, y + h - 20.0, &t, 10.0, th.text3, R, "lm");
+    }
 }
 
 fn window_chart(c: &mut Canvas, th: &Theme, s: &Stats, x: f32, y: f32, w: f32, h: f32) {

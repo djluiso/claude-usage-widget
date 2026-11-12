@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  LINUX_DEPS: libgtk-4-dev libdbus-1-dev pkg-config
+  LINUX_DEPS: libgtk-4-dev libdbus-1-dev libssl-dev pkg-config
 
 jobs:
   check:

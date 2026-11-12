@@ -10,6 +10,7 @@
 
 mod config;
 mod draw;
+mod limits;
 mod platform;
 mod pricing;
 mod usage;
@@ -58,6 +59,11 @@ fn main() {
             eprintln!("screenshots failed: {e}");
             std::process::exit(1);
         }
+        return;
+    }
+    // `--check-limits`: fetch the plan limits once and print them (no token)
+    if args.iter().any(|a| a == "--check-limits") {
+        println!("{}", limits::check_once());
         return;
     }
     let has = |flag: &str| args.iter().any(|a| a == flag);

@@ -11,6 +11,7 @@ pub(crate) enum Hit {
     Theme(&'static str),
     Dock(&'static str),
     Startup,
+    PlanLimits,
     Refresh(u32),
     OpenTranscripts,
     /// Open a tip/donation page in the browser.
@@ -25,7 +26,7 @@ pub(crate) type Hits = Vec<([f32; 4], Hit)>;
 pub(crate) const SETTINGS_BODY_H: f32 = GENERAL_H + 14.0 + PRICES_H + 14.0 + 24.0;
 const ROW_H: f32 = 52.0;
 /// The Position row (next to the Widgets button or the tray) is Windows-only.
-const GENERAL_ROWS: usize = if cfg!(windows) { 4 } else { 3 };
+const GENERAL_ROWS: usize = if cfg!(windows) { 5 } else { 4 };
 const GENERAL_H: f32 = 40.0 + GENERAL_ROWS as f32 * ROW_H;
 /// Models in the price table: the current generation.
 const PRICE_ROWS: [&str; 4] = ["fable-5-2", "opus-5-5", "sonnet-5-5", "haiku-5-5"];
@@ -99,11 +100,16 @@ pub(crate) fn draw_settings(
         },
         "Launch automatically when you sign in",
     );
-    let all_rows: [(usize, &str, &str); 4] = [
+    let all_rows: [(usize, &str, &str); 5] = [
         (0, "Theme", theme_desc),
         (1, "Position", "Where the readout sits on the taskbar"),
         (2, startup_row.0, startup_row.1),
         (3, "Refresh every", "How often transcripts are rescanned"),
+        (
+            4,
+            "Plan limits from Anthropic",
+            "Session and weekly limits, as /usage shows. Uses your Claude Code login.",
+        ),
     ];
     let rows = all_rows.iter().filter(|r| cfg!(windows) || r.0 != 1);
     for (i, (kind, label, desc)) in rows.enumerate() {
@@ -150,7 +156,8 @@ pub(crate) fn draw_settings(
                     sel,
                 );
             }
-            2 => toggle(c, th, hits, right, cy, startup),
+            2 => toggle(c, th, hits, right, cy, startup, Hit::Startup),
+            4 => toggle(c, th, hits, right, cy, cfg.plan_limits, Hit::PlanLimits),
             _ => {
                 let opts = [1000u32, 3000, 5000, 10000];
                 let sel = opts
@@ -293,7 +300,7 @@ fn segmented(
     }
 }
 
-fn toggle(c: &mut Canvas, th: &Theme, hits: &mut Hits, right: f32, cy: f32, on: bool) {
+fn toggle(c: &mut Canvas, th: &Theme, hits: &mut Hits, right: f32, cy: f32, on: bool, hit: Hit) {
     let (w, h) = (44.0, 22.0);
     let x = right - w;
     if on {
@@ -312,5 +319,5 @@ fn toggle(c: &mut Canvas, th: &Theme, hits: &mut Hits, right: f32, cy: f32, on: 
         R,
         "rm",
     );
-    hits.push(([x - 40.0, cy - h / 2.0, w + 40.0, h], Hit::Startup));
+    hits.push(([x - 40.0, cy - h / 2.0, w + 40.0, h], hit));
 }

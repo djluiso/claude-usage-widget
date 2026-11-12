@@ -15,6 +15,8 @@ pub struct Config {
     pub theme: String,
     /// How often transcripts are rescanned, in milliseconds.
     pub refresh_ms: u32,
+    /// Ask Anthropic for the plan limits `/usage` shows (session, weekly).
+    pub plan_limits: bool,
 }
 
 impl Default for Config {
@@ -23,6 +25,7 @@ impl Default for Config {
             dock: "left".into(),
             theme: "system".into(),
             refresh_ms: 3000,
+            plan_limits: true,
         }
     }
 }

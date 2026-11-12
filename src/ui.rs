@@ -89,6 +89,8 @@ struct Anim {
 struct App {
     /// `--demo`: sample data instead of transcripts.
     demo: bool,
+    /// Plan limits from Anthropic, fetched in the background.
+    limits: crate::limits::Fetcher,
     fonts: Fonts,
     theme: &'static Theme,     // panel (user setting)
     bar_theme: &'static Theme, // readout (matches the taskbar)
@@ -193,6 +195,7 @@ pub fn run(opts: crate::Options) {
         let refresh = cfg.cfg.refresh_ms.clamp(500, 60_000);
         let app = App {
             demo: opts.demo,
+            limits: crate::limits::Fetcher::start(cfg.cfg.plan_limits && !opts.demo),
             fonts: Fonts::load(),
             theme: resolve_theme(&cfg.cfg.theme),
             bar_theme: taskbar_theme(),
@@ -249,7 +252,9 @@ impl App {
             self.stats = Some(crate::usage::sample_stats());
         } else {
             self.store.scan();
-            self.stats = Some(self.store.stats());
+            let mut stats = self.store.stats();
+            stats.apply_limits(self.limits.snapshot());
+            self.stats = Some(stats);
         }
         self.render_readout();
         self.redraw_panel();
@@ -408,6 +413,7 @@ impl App {
             return;
         }
         self.backdrop = None;
+        self.limits.poke(); // fresh plan limits when the drawer opens
         self.render_panel(); // sizes the panel
         let (x_open, y, x_closed) = self.panel_target();
         self.capture_backdrop(x_open, y);

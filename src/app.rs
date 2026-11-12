@@ -30,19 +30,23 @@ pub struct App {
     pub show_settings: bool,
     hits: Hits,
     last_scan: Option<Instant>,
+    limits: crate::limits::Fetcher,
 }
 
 impl App {
     pub fn new(demo: bool) -> App {
+        let cfg = ConfigFile::load();
+        let limits = crate::limits::Fetcher::start(cfg.cfg.plan_limits && !demo);
         let mut app = App {
             fonts: Fonts::load(),
-            cfg: ConfigFile::load(),
+            cfg,
             store: Store::new(config::projects_dir()),
             stats: sample_stats(),
             demo,
             show_settings: false,
             hits: Vec::new(),
             last_scan: None,
+            limits,
         };
         app.tick();
         app
@@ -62,6 +66,7 @@ impl App {
         } else {
             self.store.scan();
             self.stats = self.store.stats();
+            self.stats.apply_limits(self.limits.snapshot());
         }
         true
     }
@@ -90,6 +95,11 @@ impl App {
         } else {
             (fmt_tokens(s.today.all as f64), "idle · today".into())
         }
+    }
+
+    /// The drawer is about to open: ask for fresh plan limits.
+    pub fn drawer_opening(&mut self) {
+        self.limits.poke();
     }
 
     /// Render the drawer at scale `k`: premultiplied BGRA bytes plus the
@@ -141,6 +151,14 @@ impl App {
                 self.cfg.save();
             }
             Hit::Startup => platform::set_autostart(!platform::autostart_enabled()),
+            Hit::PlanLimits => {
+                self.cfg.cfg.plan_limits = !self.cfg.cfg.plan_limits;
+                self.cfg.save();
+                self.limits
+                    .set_enabled(self.cfg.cfg.plan_limits && !self.demo);
+                self.last_scan = None; // show the change right away
+                self.tick();
+            }
             Hit::Refresh(ms) => {
                 self.cfg.cfg.refresh_ms = ms;
                 self.cfg.save();

@@ -261,7 +261,11 @@ fn render(ui: &Shared) {
 }
 
 fn open(ui: &Shared, settings: bool) {
-    ui.borrow_mut().app.show_settings = settings;
+    {
+        let mut u = ui.borrow_mut();
+        u.app.show_settings = settings;
+        u.app.drawer_opening();
+    }
     render(ui);
     let window = ui.borrow().window.clone();
     window.present();

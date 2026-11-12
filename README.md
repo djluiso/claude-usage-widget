@@ -40,8 +40,14 @@ runtime to install.
 
   The gear button at its top right switches the drawer to **Settings**.
 
-All data comes from Claude Code's local transcripts (`~/.claude/projects/**/*.jsonl`,
-or `$CLAUDE_CONFIG_DIR/projects`). Nothing is sent anywhere.
+- **Plan limits:** your real session and weekly limits, the same numbers
+  Claude Code's `/usage` shows. They include usage on your phone, the web and
+  other computers.
+
+Token counts, costs and charts come from Claude Code's local transcripts
+(`~/.claude/projects/**/*.jsonl`, or `$CLAUDE_CONFIG_DIR/projects`). The plan
+limits come from Anthropic; see [Plan limits](#plan-limits) for exactly what
+that involves, and how to turn it off.
 
 ## Screenshots
 
@@ -206,8 +212,9 @@ stays readable whatever the drawer theme is.
 Click the gear at the drawer's top right. Changes are saved as you make them.
 
 - **General:** theme, position (Windows only: next to the Widgets button or
-  the tray icons), **Start with Windows** / **Start at login**, and the
-  refresh interval (1, 3, 5 or 10 seconds).
+  the tray icons), **Start with Windows** / **Start at login**, the refresh
+  interval (1, 3, 5 or 10 seconds), and
+  [Plan limits from Anthropic](#plan-limits).
 - **Prices:** a read-only table of the built-in prices (see below).
 - **Open transcripts folder** and **Quit widget**.
 
@@ -222,9 +229,43 @@ Settings are stored in `config.json` in:
 {
   "dock": "left",
   "theme": "system",
-  "refresh_ms": 3000
+  "refresh_ms": 3000,
+  "plan_limits": true
 }
 ```
+
+## Plan limits
+
+The transcripts only show Claude Code on this computer. Your plan's limits
+also count the Claude apps on your phone and the web, Cowork, and other
+computers, so the widget asks Anthropic for the numbers Claude Code's `/usage`
+command shows:
+
+- **Session:** the percentage of your 5-hour limit used, and when it resets.
+  With this on, the readout's ring and "time left" use these real numbers
+  instead of the estimate.
+- **Weekly:** the percentage of your weekly limit used, and when it resets,
+  plus any per-model weekly limit.
+- **This week:** where the week's usage came from (Claude Code, Chats, Cowork).
+
+How it works, and what it touches:
+
+- It uses the login Claude Code already saved on this computer
+  (`~/.claude/.credentials.json`; on macOS, the Keychain, and macOS asks once
+  whether the widget may read it). You need a Pro or Max plan; with an API key
+  there are no plan limits to show.
+- It sends one request to Anthropic (`api.anthropic.com/api/oauth/usage`)
+  every 5 minutes and when you open the drawer. The login is sent only to
+  Anthropic and never stored by the widget.
+- It never renews the login itself, so it can't sign Claude Code out. If the
+  login has expired, the widget waits until Claude Code renews it.
+- That request is the one `/usage` makes. Anthropic doesn't document it, so it
+  may change; the widget then falls back to the local estimate.
+
+Turn it off under **Settings → Plan limits from Anthropic**; the widget then
+makes no network requests at all. To check it from a terminal, run
+`claude-usage-widget --check-limits`. It prints your current percentages
+(never the login).
 
 ## Prices
 
@@ -325,8 +366,9 @@ The same links are at the bottom of the widget's **Settings**.
 ## How it works
 
 - **Data:** the widget tails the transcript files incrementally and dedupes
-  responses by message ID. It estimates the 5-hour window from message timing,
-  so the reset time may differ slightly from Anthropic's own.
+  responses by message ID. Without [plan limits](#plan-limits), it estimates
+  the 5-hour window from message timing, so the reset time may differ from
+  Anthropic's own.
 - **Placement:** the readout is a separate borderless window that sits on top
   of the taskbar. Windows 11 has no public API for adding items to the taskbar.
   The widget finds the Widgets button through UI Automation and sets the
