@@ -25,6 +25,18 @@ pub struct Fonts {
 }
 
 impl Fonts {
+    /// Windows uses Segoe UI from the system. macOS and Linux use Inter,
+    /// bundled in the binary (SIL Open Font License, assets/fonts/OFL.txt).
+    #[cfg(not(windows))]
+    pub fn load() -> Fonts {
+        let f = |b: &'static [u8]| FontVec::try_from_vec(b.to_vec()).expect("bundled font");
+        Fonts {
+            regular: f(include_bytes!("../assets/fonts/Inter-Regular.ttf")),
+            semibold: f(include_bytes!("../assets/fonts/Inter-SemiBold.ttf")),
+        }
+    }
+
+    #[cfg(windows)]
     pub fn load() -> Fonts {
         let dir = std::env::var("WINDIR").unwrap_or_else(|_| r"C:\Windows".into()) + r"\Fonts\";
         let load = |names: &[&str]| -> FontVec {
@@ -346,6 +358,28 @@ impl<'a> Canvas<'a> {
     }
 
     /// Premultiplied BGRA bytes for UpdateLayeredWindow.
+    /// Straight-alpha RGBA bytes (what tray-icon wants).
+    #[allow(dead_code)] // used by the macOS frontend
+    pub fn to_rgba(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(self.pm.data().len());
+        for p in self.pm.pixels() {
+            let c = p.demultiply();
+            out.extend_from_slice(&[c.red(), c.green(), c.blue(), c.alpha()]);
+        }
+        out
+    }
+
+    /// Straight-alpha ARGB32 in network byte order (StatusNotifierItem icons).
+    #[allow(dead_code)] // used by the Linux frontend
+    pub fn to_argb_be(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(self.pm.data().len());
+        for p in self.pm.pixels() {
+            let c = p.demultiply();
+            out.extend_from_slice(&[c.alpha(), c.red(), c.green(), c.blue()]);
+        }
+        out
+    }
+
     pub fn to_bgra(&self, min_alpha: u8) -> Vec<u8> {
         let mut out = self.pm.data().to_vec();
         for px in out.as_chunks_mut::<4>().0 {

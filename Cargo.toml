@@ -2,7 +2,7 @@
 name = "claude-usage-widget"
 version = "1.3.0"
 edition = "2021"
-description = "Windows 11 taskbar widget showing Claude Code usage in real time"
+description = "Claude Code usage in real time: Windows taskbar, macOS menu bar, Linux tray"
 repository = "https://github.com/djluiso/claude-usage-widget"
 publish = false
 
@@ -13,7 +13,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tiny-skia = "0.11"
 
-[dependencies.windows]
+[target.'cfg(windows)'.dependencies.windows]
 version = "0.58"
 features = [
     "Win32_Foundation",
@@ -32,8 +32,36 @@ features = [
     "Win32_UI_WindowsAndMessaging",
 ]
 
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = "0.25"
+foreign-types = "0.5"
+objc2 = "0.6"
+objc2-app-kit = "0.3"
+objc2-quartz-core = "0.3"
+tao = "0.37"
+tray-icon = "0.26"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+async-channel = "2"
+gtk4 = { version = "0.11", features = ["v4_12"] }
+ksni = { version = "0.3", features = ["blocking"] }
+
 [build-dependencies]
 winresource = "0.1"
+
+# Linux .deb (built in CI with cargo-deb)
+[package.metadata.deb]
+name = "claude-usage-widget"
+maintainer = "djluiso <djluiso@users.noreply.github.com>"
+section = "utils"
+priority = "optional"
+depends = "$auto"
+extended-description = """Shows Claude Code usage (tokens, the 5-hour window, cost estimates) in the system tray, with a detail drawer. Reads Claude Code's local transcripts; nothing leaves the machine."""
+assets = [
+    ["target/release/claude-usage-widget", "usr/bin/", "755"],
+    ["installer/linux/claude-usage-widget.desktop", "usr/share/applications/", "644"],
+    ["assets/icon.png", "usr/share/icons/hicolor/256x256/apps/claude-usage-widget.png", "644"],
+]
 
 [profile.release]
 opt-level = 3

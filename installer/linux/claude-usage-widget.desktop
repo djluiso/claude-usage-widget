@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Claude Usage Widget
+Comment=Claude Code usage in your tray
+Exec=claude-usage-widget
+Icon=claude-usage-widget
+Terminal=false
+Categories=Utility;Development;
+StartupNotify=false

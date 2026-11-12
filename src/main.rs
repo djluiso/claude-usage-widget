@@ -1,27 +1,48 @@
-#![windows_subsystem = "windows"]
+#![cfg_attr(windows, windows_subsystem = "windows")]
 // Drawing helpers naturally take position, size, colour and style together.
 #![allow(clippy::too_many_arguments)]
-//! Claude Code Usage — Windows 11 taskbar readout + slide-in detail panel.
+//! Claude Code Usage: a live readout of Claude Code usage with a detail drawer.
+//! - Windows: on the taskbar next to the Widgets button
+//! - macOS: in the menu bar
+//! - Linux: in the system tray
+//!
 //! Reads Claude Code's local transcripts; nothing leaves the machine.
 
 mod config;
 mod draw;
+mod platform;
 mod pricing;
-mod sys;
-mod ui;
 mod usage;
+mod view;
 
-use windows::core::w;
-use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
-use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
-use windows::Win32::System::Threading::CreateMutexW;
-use windows::Win32::UI::HiDpi::{
-    SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
-};
+#[cfg(windows)]
+mod sys;
+#[cfg(windows)]
+mod ui;
+
+#[cfg(not(windows))]
+mod app;
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "macos")]
+mod mac;
+
+/// Command-line switches shared by every platform.
+#[derive(Clone, Copy, Default)]
+#[allow(dead_code)] // not every frontend reads every switch
+pub struct Options {
+    /// `--demo`: show sample data instead of reading transcripts.
+    pub demo: bool,
+    /// `--open`: open the drawer right away.
+    pub open: bool,
+    /// `--settings`: open the drawer on Settings right away.
+    pub settings: bool,
+}
 
 fn main() {
     std::panic::set_hook(Box::new(|info| {
         let msg = format!("[{}] {}\n", chrono::Local::now().format("%F %T"), info);
+        eprint!("{msg}");
         let _ = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -29,14 +50,40 @@ fn main() {
             .and_then(|mut f| std::io::Write::write_all(&mut f, msg.as_bytes()));
     }));
 
-    // `--screenshots <dir>`: render README images from sample data, then exit
     let args: Vec<String> = std::env::args().collect();
+    // `--screenshots <dir>`: render README images from sample data, then exit
     if let Some(i) = args.iter().position(|a| a == "--screenshots") {
         let dir = args.get(i + 1).map(String::as_str).unwrap_or("docs");
-        let _ = ui::render_screenshots(std::path::Path::new(dir));
+        if let Err(e) = view::render_screenshots(std::path::Path::new(dir)) {
+            eprintln!("screenshots failed: {e}");
+            std::process::exit(1);
+        }
         return;
     }
+    let has = |flag: &str| args.iter().any(|a| a == flag);
+    let opts = Options {
+        demo: has("--demo"),
+        open: has("--open"),
+        settings: has("--settings"),
+    };
 
+    #[cfg(windows)]
+    windows_main(opts);
+    #[cfg(target_os = "macos")]
+    mac::run(opts);
+    #[cfg(target_os = "linux")]
+    linux::run(opts);
+}
+
+#[cfg(windows)]
+fn windows_main(opts: Options) {
+    use windows::core::w;
+    use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
+    use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
+    use windows::Win32::System::Threading::CreateMutexW;
+    use windows::Win32::UI::HiDpi::{
+        SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+    };
     unsafe {
         // one instance per user session
         let _mutex = CreateMutexW(None, true, w!("Local\\ClaudeUsageWidget"));
@@ -54,6 +101,6 @@ fn main() {
         }
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-        ui::run();
+        ui::run(opts);
     }
 }

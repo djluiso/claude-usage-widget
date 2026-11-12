@@ -1,9 +1,13 @@
 name: CI & Release
 
-# Every push and pull request runs the checks (format, lint, unit tests).
+# Every push and pull request:
+#   - checks format, lints and runs the unit tests on Windows, macOS and Linux
+#   - "preview": runs the real app on macOS and Linux with sample data and
+#     uploads screenshots (plus the README renders) as an artifact, so the
+#     non-Windows builds can be looked at without owning those machines
 # A push to main whose Cargo.toml version has no GitHub Release yet then builds
-# the installers and publishes that release automatically — so bumping
-# `version` in Cargo.toml is how you ship. Other pushes are checked only.
+# every installer and publishes that release, so bumping `version` in
+# Cargo.toml is how you ship.
 on:
   push:
     branches: [main]
@@ -17,11 +21,22 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  LINUX_DEPS: libgtk-4-dev libdbus-1-dev pkg-config
+
 jobs:
   check:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -30,6 +45,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Format
+        if: runner.os == 'Linux'
         run: cargo fmt --check
 
       - name: Lint
@@ -38,85 +54,192 @@ jobs:
       - name: Unit tests
         run: cargo test --locked
 
-  release:
+  preview:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux build and display dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y $LINUX_DEPS xvfb imagemagick dbus-x11
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: README renders
+        run: ./target/release/claude-usage-widget --screenshots preview/renders
+
+      - name: Live app screenshots (Linux, virtual display)
+        if: runner.os == 'Linux'
+        run: |
+          export DISPLAY=:99 GSK_RENDERER=cairo GDK_BACKEND=x11
+          Xvfb :99 -screen 0 1920x1200x24 &
+          sleep 2
+          dbus-run-session -- bash -c '
+            ./target/release/claude-usage-widget --demo --open &
+            sleep 8
+            import -window root preview/linux-drawer.png
+            ./target/release/claude-usage-widget   # second launch: Settings
+            sleep 4
+            import -window root preview/linux-settings.png
+          '
+
+      - name: Live app screenshots (macOS)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        run: |
+          ./target/release/claude-usage-widget --demo --open &
+          sleep 10
+          screencapture -x preview/macos-drawer.png
+          kill %1 || true
+          ./target/release/claude-usage-widget --demo --settings &
+          sleep 10
+          screencapture -x preview/macos-settings.png
+          kill %1 || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: preview-${{ runner.os }}
+          path: preview/
+
+  version:
     needs: check
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Is this version already released?
-        id: version
-        shell: pwsh
+        id: v
         run: |
-          $v = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
-          "version=$v" >> $env:GITHUB_OUTPUT
-          gh release view "v$v" --repo $env:GITHUB_REPOSITORY *> $null
-          if ($LASTEXITCODE -eq 0) {
-            "release=false" >> $env:GITHUB_OUTPUT
-            "::notice::v$v is already released - bump version in Cargo.toml to publish a new release."
-          } else {
-            "release=true" >> $env:GITHUB_OUTPUT
-            "::notice::Releasing v$v"
-          }
-          exit 0
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if gh release view "v$v" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::v$v is already released - bump version in Cargo.toml to publish a new release."
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Releasing v$v"
+          fi
 
+  build-windows:
+    needs: version
+    if: needs.version.outputs.release == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        if: steps.version.outputs.release == 'true'
-
       - uses: Swatinem/rust-cache@v2
-        if: steps.version.outputs.release == 'true'
 
       - name: Build
-        if: steps.version.outputs.release == 'true'
         run: cargo build --release --locked
 
       - name: Build setup.exe (Inno Setup)
-        if: steps.version.outputs.release == 'true'
         shell: pwsh
         run: |
           choco install innosetup -y --no-progress
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DAppVersion=${{ steps.version.outputs.version }}" installer\setup.iss
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DAppVersion=${{ needs.version.outputs.version }}" installer\setup.iss
 
       - name: Build .msi (WiX)
-        if: steps.version.outputs.release == 'true'
         shell: pwsh
         run: |
           dotnet tool install --global wix --version 5.0.2
-          wix build installer\widget.wxs -arch x64 -d "Version=${{ steps.version.outputs.version }}" `
-            -o "dist\ClaudeUsageWidget-${{ steps.version.outputs.version }}.msi"
+          wix build installer\widget.wxs -arch x64 -d "Version=${{ needs.version.outputs.version }}" `
+            -o "dist\ClaudeUsageWidget-${{ needs.version.outputs.version }}.msi"
           Remove-Item dist\*.wixpdb -ErrorAction SilentlyContinue
 
-      - name: Portable zip + checksums
-        if: steps.version.outputs.release == 'true'
+      - name: Portable zip
         shell: pwsh
         run: |
-          $v = "${{ steps.version.outputs.version }}"
           Compress-Archive -Path target\release\claude-usage-widget.exe, README.md `
-            -DestinationPath "dist\ClaudeUsageWidget-$v-portable.zip"
-          Get-ChildItem dist -File | ForEach-Object {
-            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
-          } | Set-Content dist\SHA256SUMS.txt
+            -DestinationPath "dist\ClaudeUsageWidget-${{ needs.version.outputs.version }}-portable.zip"
 
-      - name: Upload build artifacts
-        if: steps.version.outputs.release == 'true'
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: ClaudeUsageWidget-${{ steps.version.outputs.version }}
+          name: dist-windows
           path: dist/*
 
+  build-macos:
+    needs: version
+    if: needs.version.outputs.release == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build app and .dmg
+        run: bash installer/macos/build-app.sh "${{ needs.version.outputs.version }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-macos
+          path: dist/*.dmg
+
+  build-linux:
+    needs: version
+    if: needs.version.outputs.release == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+
+      - name: Build .deb and tarball
+        run: |
+          v="${{ needs.version.outputs.version }}"
+          mkdir -p dist
+          cargo deb --locked --output "dist/claude-usage-widget_${v}_amd64.deb"
+          t="claude-usage-widget-$v-linux-x86_64"
+          mkdir -p "$t"
+          cp target/release/claude-usage-widget installer/linux/claude-usage-widget.desktop \
+             assets/icon.png README.md "$t/"
+          tar czf "dist/$t.tar.gz" "$t"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-linux
+          path: dist/*
+
+  publish:
+    needs: [version, build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+
       - name: Publish GitHub Release
-        if: steps.version.outputs.release == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
+          tag_name: v${{ needs.version.outputs.version }}
           target_commitish: ${{ github.sha }}
-          name: Claude Usage Widget ${{ steps.version.outputs.version }}
+          name: Claude Usage Widget ${{ needs.version.outputs.version }}
           generate_release_notes: true
-          files: |
-            dist/*-setup.exe
-            dist/*.msi
-            dist/*-portable.zip
-            dist/SHA256SUMS.txt
+          files: dist/*

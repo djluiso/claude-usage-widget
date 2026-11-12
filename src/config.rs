@@ -1,4 +1,4 @@
-//! User settings, stored as JSON in %LOCALAPPDATA%\ClaudeUsageWidget\config.json.
+//! User settings, stored as JSON in the per-user data folder (see `data_dir`).
 //! The file is created with defaults on first run and re-read when it changes.
 
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,8 @@ use std::time::SystemTime;
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    /// "left" = next to the Widgets button, "right" = next to the tray icons.
+    /// Windows only: "left" = next to the Widgets button, "right" = next to
+    /// the tray icons.
     pub dock: String,
     /// "system" (follow Windows light/dark mode), "dark" or "light".
     pub theme: String,
@@ -26,11 +27,28 @@ impl Default for Config {
     }
 }
 
+/// Where config.json and error.log live:
+/// - Windows: %LOCALAPPDATA%\ClaudeUsageWidget
+/// - macOS: ~/Library/Application Support/ClaudeUsageWidget
+/// - Linux: $XDG_CONFIG_HOME/claude-usage-widget (usually ~/.config/...)
 pub fn data_dir() -> PathBuf {
-    let base = std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
-    let dir = base.join("ClaudeUsageWidget");
+    let home = || std::env::var_os("HOME").map(PathBuf::from);
+    let dir = if cfg!(windows) {
+        std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join("ClaudeUsageWidget")
+    } else if cfg!(target_os = "macos") {
+        home()
+            .unwrap_or_else(std::env::temp_dir)
+            .join("Library/Application Support/ClaudeUsageWidget")
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| home().map(|h| h.join(".config")))
+            .unwrap_or_else(std::env::temp_dir)
+            .join("claude-usage-widget")
+    };
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

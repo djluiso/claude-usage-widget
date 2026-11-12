@@ -1,12 +1,12 @@
-//! The drawer's Settings view: theme, position, startup, refresh rate, and a
-//! read-only table of the built-in prices. Every change is saved immediately.
-//! The gear button in the drawer's header switches between Usage and Settings.
+//! The drawer's Settings view: theme, position (Windows), start at login,
+//! refresh rate, and a read-only table of the built-in prices. The gear
+//! button in the drawer's header switches between Usage and Settings.
 
 use super::*;
 
 /// Something clickable in the drawer (logical panel coordinates).
 #[derive(Clone, Copy, PartialEq)]
-pub(super) enum Hit {
+pub(crate) enum Hit {
     Gear,
     Theme(&'static str),
     Dock(&'static str),
@@ -16,13 +16,15 @@ pub(super) enum Hit {
     Quit,
 }
 
-pub(super) type Hits = Vec<([f32; 4], Hit)>;
+pub(crate) type Hits = Vec<([f32; 4], Hit)>;
 
 /// Height of the settings body (kept within the usage view's minimum so the
 /// drawer doesn't change size when switching views).
-pub(super) const SETTINGS_BODY_H: f32 = GENERAL_H + 14.0 + PRICES_H + 14.0 + 24.0;
+pub(crate) const SETTINGS_BODY_H: f32 = GENERAL_H + 14.0 + PRICES_H + 14.0 + 24.0;
 const ROW_H: f32 = 52.0;
-const GENERAL_H: f32 = 40.0 + 4.0 * ROW_H;
+/// The Position row (next to the Widgets button or the tray) is Windows-only.
+const GENERAL_ROWS: usize = if cfg!(windows) { 4 } else { 3 };
+const GENERAL_H: f32 = 40.0 + GENERAL_ROWS as f32 * ROW_H;
 /// Models in the price table: the current generation.
 const PRICE_ROWS: [&str; 4] = ["fable-5-2", "opus-5-5", "sonnet-5-5", "haiku-5-5"];
 const PRICE_ROW_H: f32 = 26.0;
@@ -37,88 +39,9 @@ fn fmt_price(v: f64) -> String {
     }
 }
 
-impl App {
-    // ------------------------------------------------------------ actions --
-    pub(super) fn set_theme(&mut self, t: &str) {
-        self.cfg.cfg.theme = t.into();
-        self.cfg.save();
-        self.theme = resolve_theme(t);
-        self.render_readout();
-        self.redraw_panel();
-    }
-
-    pub(super) fn set_dock(&mut self, d: &str) {
-        self.cfg.cfg.dock = d.into();
-        self.cfg.save();
-        self.locator.invalidate();
-        self.render_readout();
-        self.redraw_panel();
-    }
-
-    pub(super) fn set_refresh(&mut self, ms: u32) {
-        self.cfg.cfg.refresh_ms = ms;
-        self.cfg.save();
-        unsafe {
-            let _ = KillTimer(self.readout, T_TICK);
-            SetTimer(self.readout, T_TICK, ms.clamp(500, 60_000), None);
-        }
-        self.redraw_panel();
-    }
-
-    /// Open the drawer on its Settings view.
-    pub(super) fn open_settings(&mut self) {
-        self.show_settings = true;
-        if self.panel_open {
-            self.redraw_panel();
-            unsafe {
-                let _ = SetForegroundWindow(self.panel);
-            }
-        } else {
-            self.closed_at = None;
-            self.open_panel();
-        }
-    }
-
-    pub(super) fn set_view(&mut self, settings: bool) {
-        if self.show_settings != settings {
-            self.show_settings = settings;
-            self.redraw_panel();
-        }
-    }
-
-    // ------------------------------------------------------------- input --
-    /// Hit test in panel-window pixels (the window includes the shadow margin).
-    pub(super) fn panel_hit(&self, px: i32, py: i32) -> Option<Hit> {
-        let k = self.scale();
-        let (x, y) = (px as f32 / k - SHADOW_M, py as f32 / k - SHADOW_M);
-        self.panel_hits
-            .iter()
-            .find(|(r, _)| x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3])
-            .map(|(_, h)| *h)
-    }
-
-    pub(super) fn panel_click(&mut self, px: i32, py: i32) {
-        match self.panel_hit(px, py) {
-            Some(Hit::Gear) => self.set_view(!self.show_settings),
-            Some(Hit::Theme(t)) => self.set_theme(t),
-            Some(Hit::Dock(d)) => self.set_dock(d),
-            Some(Hit::Startup) => {
-                sys::set_startup(!sys::startup_enabled());
-                self.redraw_panel();
-            }
-            Some(Hit::Refresh(ms)) => self.set_refresh(ms),
-            Some(Hit::OpenTranscripts) => {
-                sys::shell_open(&config::projects_dir().display().to_string(), None)
-            }
-            Some(Hit::Quit) => self.handle_menu(M_QUIT),
-            None => {}
-        }
-    }
-}
-
 // ----------------------------------------------------------------- drawing --
 /// Gear button in the drawer header, top right. `on` = Settings view showing.
-pub(super) fn gear_button(c: &mut Canvas, th: &Theme, hits: &mut Hits, x: f32, y: f32, on: bool) {
+pub(crate) fn gear_button(c: &mut Canvas, th: &Theme, hits: &mut Hits, x: f32, y: f32, on: bool) {
     let s = 32.0;
     let ink = if on { [255, 255, 255, 255] } else { th.text2 };
     if on {
@@ -144,7 +67,7 @@ pub(super) fn gear_button(c: &mut Canvas, th: &Theme, hits: &mut Hits, x: f32, y
 }
 
 /// The Settings view body, drawn inside the drawer at (x, y) with width w.
-pub(super) fn draw_settings(
+pub(crate) fn draw_settings(
     c: &mut Canvas,
     th: &Theme,
     cfg: &crate::config::Config,
@@ -157,16 +80,27 @@ pub(super) fn draw_settings(
     // ---- General
     c.card(x, y, w, GENERAL_H, th.card, th.card_border, 8.0);
     c.text(x + 16.0, y + 15.0, "General", 12.0, th.text1, SB, "la");
-    let rows: [(&str, &str); 4] = [
-        ("Theme", "Drawer colours. System follows Windows' app mode."),
-        ("Position", "Where the readout sits on the taskbar"),
-        (
-            "Start with Windows",
-            "Launch automatically when you sign in",
-        ),
-        ("Refresh every", "How often transcripts are rescanned"),
+    let theme_desc = if cfg!(windows) {
+        "Drawer colours. System follows Windows' app mode."
+    } else {
+        "Drawer colours. System follows your light/dark setting."
+    };
+    let startup_row = (
+        if cfg!(windows) {
+            "Start with Windows"
+        } else {
+            "Start at login"
+        },
+        "Launch automatically when you sign in",
+    );
+    let all_rows: [(usize, &str, &str); 4] = [
+        (0, "Theme", theme_desc),
+        (1, "Position", "Where the readout sits on the taskbar"),
+        (2, startup_row.0, startup_row.1),
+        (3, "Refresh every", "How often transcripts are rescanned"),
     ];
-    for (i, (label, desc)) in rows.iter().enumerate() {
+    let rows = all_rows.iter().filter(|r| cfg!(windows) || r.0 != 1);
+    for (i, (kind, label, desc)) in rows.enumerate() {
         let ry = y + 40.0 + i as f32 * ROW_H;
         if i > 0 {
             c.line(x + 16.0, ry, x + w - 16.0, ry, th.grid, 1.0);
@@ -174,7 +108,7 @@ pub(super) fn draw_settings(
         c.text(x + 16.0, ry + 10.0, label, 12.0, th.text1, R, "la");
         c.text(x + 16.0, ry + 29.0, desc, 10.0, th.text3, R, "la");
         let (right, cy) = (x + w - 16.0, ry + ROW_H / 2.0);
-        match i {
+        match kind {
             0 => {
                 let sel = match cfg.theme.as_str() {
                     "dark" => 1,
