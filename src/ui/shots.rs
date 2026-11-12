@@ -1,8 +1,7 @@
-//! README scenes for `--screenshots`: the widget on a Windows 11-style desktop
-//! and the Settings window. Everything here is drawn from sample data with
+//! README scenes for `--screenshots`: the widget on a Windows 11-style desktop,
+//! with the drawer closed, open on usage, and open on Settings. Everything here is drawn from sample data with
 //! generic placeholder icons, so no real desktop, apps or usage appear.
 
-use super::settings::{draw_settings, FieldEdit};
 use super::*;
 use crate::config::Config;
 use crate::draw::blurred_backdrop;
@@ -102,16 +101,24 @@ fn crop(
     (out, ow, oh)
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum Drawer {
+    Closed,
+    Usage,
+    Settings,
+}
+
 /// Windows 11-style taskbar with generic icons, the readout docked next to
-/// the weather button, and (optionally) the panel open above it.
+/// the weather button, and (optionally) the drawer open above it.
 fn desktop(
     fonts: &Fonts,
     th: &'static Theme,
     s: &Stats,
     light: bool,
-    panel: bool,
+    drawer: Drawer,
     path: &Path,
 ) -> Io {
+    let panel = drawer != Drawer::Closed;
     let k = SCENE_K;
     let mut c = Canvas::new(SCENE_W, SCENE_H, k, fonts);
     let (wp, ww, wh) = wallpaper(light);
@@ -186,7 +193,9 @@ fn desktop(
         let (px, py) = (12.0, top - 12.0 - h);
         let (bd, bw, bh) = crop(&wp, ww, wh, px, py, PANEL_W, h);
         let backdrop = blurred_backdrop(&bd, bw, bh, 1);
-        let p = draw_panel(fonts, th, s, k, backdrop.as_ref());
+        let cfg = Config::default();
+        let view = (drawer == Drawer::Settings).then_some((&cfg, true));
+        let (p, _) = draw_panel(fonts, th, s, k, backdrop.as_ref(), view);
         c.draw_at(
             &p.pm,
             ((px - SHADOW_M) * k) as i32,
@@ -203,96 +212,22 @@ fn desktop(
     strip.save_png(path).map_err(std::io::Error::other)
 }
 
-/// The Settings window with a Windows-style title bar and drop shadow.
-fn settings_window(fonts: &Fonts, th: &'static Theme, light: bool, path: &Path) -> Io {
-    let k = 2.0;
-    let cfg = Config::default();
-    let edit = Some(FieldEdit {
-        model: "opus",
-        j: 1,
-        buf: "25",
-        fresh: true,
-        caret: false,
-    });
-    let (body, _) = draw_settings(fonts, th, &cfg, true, k, edit);
-    let (bw, bh) = (body.pm.width() as f32 / k, body.pm.height() as f32 / k);
-    let (m, title_h) = (28.0, 32.0);
-    let (ww, wh) = (bw, bh + title_h);
-    let mut c = Canvas::new(ww + 2.0 * m, wh + 2.0 * m, k, fonts);
-    for i in 0..18 {
-        let i = i as f32;
-        c.rect(
-            m - i,
-            m - i + 10.0,
-            ww + 2.0 * i,
-            wh + 2.0 * i,
-            [0, 0, 0, 5],
-            8.0 + i,
-        );
-    }
-    let bg = if light {
-        [243, 243, 243, 255]
-    } else {
-        [32, 32, 32, 255]
-    };
-    c.rect(m, m, ww, wh, bg, 8.0);
-    c.draw_at(&body.pm, (m * k) as i32, ((m + title_h) * k) as i32);
-    let border = if light {
-        [0, 0, 0, 40]
-    } else {
-        [255, 255, 255, 34]
-    };
-    c.card(m, m, ww, wh, [0, 0, 0, 0], border, 8.0);
-
-    // title bar
-    let ty = m + title_h / 2.0;
-    c.spark(m + 18.0, ty, 6.0, th.accent);
-    c.text(
-        m + 34.0,
-        ty,
-        "Claude Usage Widget — Settings",
-        11.0,
-        th.text1,
-        R,
-        "lm",
-    );
-    let bx = m + ww - 46.0 * 3.0;
-    let g = th.text2;
-    c.line(bx + 18.0, ty, bx + 28.0, ty, g, 1.0); // minimise
-    c.card(
-        bx + 46.0 + 18.0,
-        ty - 5.0,
-        10.0,
-        10.0,
-        [0, 0, 0, 0],
-        th.text3,
-        1.0,
-    ); // maximise (disabled)
-    let cx = bx + 92.0 + 23.0;
-    c.line(cx - 5.0, ty - 5.0, cx + 5.0, ty + 5.0, g, 1.0); // close
-    c.line(cx - 5.0, ty + 5.0, cx + 5.0, ty - 5.0, g, 1.0);
-    save(&c, path)
-}
-
 pub(super) fn render_scenes(dir: &Path, fonts: &Fonts, s: &Stats) -> Io {
     for (name, th, light) in [("dark", &DARK, false), ("light", &LIGHT, true)] {
-        desktop(
-            fonts,
-            th,
-            s,
-            light,
-            false,
-            &dir.join(format!("taskbar-{name}.png")),
-        )?;
-        desktop(
-            fonts,
-            th,
-            s,
-            light,
-            true,
-            &dir.join(format!("desktop-panel-{name}.png")),
-        )?;
-        settings_window(fonts, th, light, &dir.join(format!("settings-{name}.png")))?;
+        for (drawer, file) in [
+            (Drawer::Closed, "taskbar"),
+            (Drawer::Usage, "desktop-panel"),
+            (Drawer::Settings, "desktop-settings"),
+        ] {
+            desktop(
+                fonts,
+                th,
+                s,
+                light,
+                drawer,
+                &dir.join(format!("{file}-{name}.png")),
+            )?;
+        }
     }
     Ok(())
 }

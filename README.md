@@ -18,12 +18,14 @@ written in Rust, with no runtime to install.
   - a ring for how much of the 5-hour usage window has passed
   - tokens used in the window and the time left until it resets
   - a sparkline of output tokens over the last 60 minutes
-- **Detail panel:** a frosted-glass panel that slides in from the screen edge. It shows:
+- **Drawer:** a frosted-glass panel that slides in from the screen edge. It shows:
   - a gauge for the 5-hour window and its activity chart
   - stat tiles: burn rate, last hour, today, and cache hit rate
   - cost per day for the last 7 days
   - today's token mix and usage per model
   - recent sessions
+
+  The gear button at its top right switches the drawer to **Settings**.
 
 All data comes from Claude Code's local transcripts (`~/.claude/projects/**/*.jsonl`,
 or `$CLAUDE_CONFIG_DIR/projects`). Nothing is sent anywhere.
@@ -48,24 +50,30 @@ next to the tokens used, the time left, and output over the last hour.
   <img src="docs/readout-light.png" alt="Taskbar readout: ring gauge, tokens used in the 5-hour window, time left, and a sparkline" width="205">
 </picture>
 
-**Detail panel.** Click the readout and this panel slides in from the screen
-edge.
+**Drawer open.** Click the readout and the drawer slides in above the
+taskbar. This is the whole screen as you'd see it.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/desktop-panel-dark.png">
+  <img src="docs/desktop-panel-light.png" alt="Full Windows 11 desktop with the usage drawer open above the taskbar readout">
+</picture>
+
+**Drawer close-up.**
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/panel-dark.png">
-    <img src="docs/panel-light.png" alt="Detail panel: 5-hour window gauge, activity chart, stat tiles, 7-day history, token mix, models and recent sessions" width="808">
+    <img src="docs/panel-light.png" alt="Drawer: 5-hour window gauge, activity chart, stat tiles, 7-day history, token mix, models and recent sessions" width="808">
   </picture>
 </p>
 
-**Settings.** Right-click the readout and choose **Settings…**.
+**Settings.** Click the gear at the drawer's top right. Click it again, or
+press **Esc**, to go back.
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/settings-dark.png">
-    <img src="docs/settings-light.png" alt="Settings window: theme, position, start with Windows, refresh interval and an editable price table" width="616">
-  </picture>
-</p>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/desktop-settings-dark.png">
+  <img src="docs/desktop-settings-light.png" alt="The drawer showing Settings: theme, position, start with Windows, refresh interval and the built-in price table">
+</picture>
 
 ## Install
 
@@ -84,79 +92,80 @@ Requires Windows 11 (x64).
 
 ## Use
 
-- **Left-click** the readout to open or close the panel.
-- In the panel, press **Esc** or click anywhere else to close it.
-- **Right-click** the readout or the panel for the menu:
-  - dock position (next to the Widgets button or next to the tray icons)
-  - **Theme:** System, Dark or Light
-  - **Start with Windows**
-  - open the transcripts folder
-  - **Settings…**
-  - quit
+- **Left-click** the readout to open or close the drawer. Right-clicking the
+  readout does nothing, so it can't get in the way on the taskbar.
+- Click the **gear** at the drawer's top right for **Settings**.
+- Press **Esc** or click anywhere else to close the drawer. In Settings,
+  **Esc** goes back to the usage view first.
+- **Right-click inside the drawer** for a quick menu: dock position, theme,
+  **Start with Windows**, open the transcripts folder, Settings, and quit.
 - Launching the app again (for example from the Start Menu) while it's running
-  opens **Settings**.
+  opens the drawer on **Settings**.
 
 ## Start with Windows
 
 You can turn this on in two ways:
 
 - In the setup wizard, tick **Start with Windows**.
-- In the widget, right-click the readout and check **Start with Windows**, or
-  use the toggle in **Settings**.
+- In the widget, use the **Start with Windows** toggle in **Settings** (the
+  gear in the drawer).
 
 Both add a `ClaudeUsageWidget` value under
-`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. To turn it off, uncheck
-the menu item or disable it in **Settings → Apps → Startup**. Uninstalling
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. To turn it off, use the
+same toggle or disable it in Windows under **Settings → Apps → Startup**. Uninstalling
 removes the entry.
 
 ## Themes
 
-Pick a theme in **Settings** or from the right-click menu under **Theme**:
+Pick a theme in the drawer's **Settings** (or right-click inside the drawer,
+then **Theme**):
 
-| Option | Panel |
+| Option | Drawer |
 |---|---|
 | **System** (default) | Follows Windows' app mode (**Settings → Personalization → Colors → Choose your default app mode**), and switches live when you change it |
 | **Dark** | Always dark |
 | **Light** | Always light |
 
 The taskbar readout always matches the taskbar itself (Windows mode), so it
-stays readable whatever the panel theme is.
+stays readable whatever the drawer theme is.
 
 ## Settings
 
-Open the Settings window from the right-click menu (**Settings…**). Changes
-are saved as you make them. It has two sections:
+Click the gear at the drawer's top right. Changes are saved as you make them.
 
 - **General:** theme, position (next to the Widgets button or the tray icons),
   **Start with Windows**, and the refresh interval (1, 3, 5 or 10 seconds).
-- **Prices:** an editable table of USD per million tokens for each model. Click
-  a value and type over it. **Tab** moves to the next field, **Enter** saves,
-  and **Esc** cancels. **Reset to defaults** restores the built-in prices.
+- **Prices:** a read-only table of the built-in prices (see below).
+- **Open transcripts folder** and **Quit widget**.
 
-Everything is stored in `%LOCALAPPDATA%\ClaudeUsageWidget\config.json`. The
-file is created on first run, and hand edits are picked up automatically.
-Adding a model there (for example `"opus-4"`) gives it its own row in the price
-table.
+Settings are stored in `%LOCALAPPDATA%\ClaudeUsageWidget\config.json`:
 
 ```json
 {
   "dock": "left",
   "theme": "system",
-  "refresh_ms": 3000,
-  "prices": {
-    "opus":   [5.0, 25.0, 6.25, 0.5],
-    "sonnet": [3.0, 15.0, 3.75, 0.3]
-  }
+  "refresh_ms": 3000
 }
 ```
 
-`dock` is `"left"` or `"right"`, and `theme` is `"system"`, `"dark"` or `"light"`.
-`prices` are USD per million tokens, in the order
-`[input, output, cache write, cache read]`. They're matched against the model
-name by substring.
+## Prices
 
-> **Note:** dollar figures are API-list-price **estimates**, not what your
-> subscription bills. Check them against https://claude.com/pricing.
+The $ figures use Anthropic's published API prices
+([pricing page](https://platform.claude.com/docs/en/about-claude/pricing)),
+built into the app for every Claude model. There's nothing to configure.
+
+- Each response is priced by its exact model, including dated ids such as
+  `claude-sonnet-4-5-20250929`. An unknown model of a known family (for
+  example a newer Opus) uses that family's current price.
+- Cache writes are priced by duration. Claude Code writes 1-hour cache
+  entries, which cost 2× input; 5-minute writes cost 1.25×.
+- Haiku 5.5 prompts over 100K tokens use its higher long-prompt rate.
+
+When Anthropic changes prices, a new release updates the table
+([`src/pricing.rs`](src/pricing.rs)).
+
+> **Note:** these are API list-price **estimates**, not what your Pro or Max
+> subscription bills.
 
 ## Build from source
 

@@ -2,12 +2,8 @@
 //! The file is created with defaults on first run and re-read when it changes.
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::SystemTime;
-
-/// USD per million tokens: [input, output, cache write, cache read].
-pub type Price = [f64; 4];
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -18,35 +14,15 @@ pub struct Config {
     pub theme: String,
     /// How often transcripts are rescanned, in milliseconds.
     pub refresh_ms: u32,
-    /// API-equivalent price estimates, matched by substring of the model id.
-    pub prices: BTreeMap<String, Price>,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        let mut prices = BTreeMap::new();
-        prices.insert("opus".into(), [5.00, 25.00, 6.25, 0.50]);
-        prices.insert("sonnet".into(), [3.00, 15.00, 3.75, 0.30]);
-        prices.insert("haiku".into(), [1.00, 5.00, 1.25, 0.10]);
-        prices.insert("fable".into(), [5.00, 25.00, 6.25, 0.50]);
         Self {
             dock: "left".into(),
             theme: "system".into(),
             refresh_ms: 3000,
-            prices,
         }
-    }
-}
-
-impl Config {
-    pub fn price_for(&self, model: &str) -> Price {
-        let m = model.to_lowercase();
-        self.prices
-            .iter()
-            .find(|(k, _)| m.contains(k.as_str()))
-            .map(|(_, p)| *p)
-            .or_else(|| self.prices.get("sonnet").copied())
-            .unwrap_or([3.0, 15.0, 3.75, 0.30])
     }
 }
 

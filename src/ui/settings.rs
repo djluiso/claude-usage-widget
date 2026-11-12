@@ -1,63 +1,40 @@
-//! Settings window: theme, position, startup, refresh rate and price table.
-//! Custom-drawn to match the panel; every change is saved immediately.
+//! The drawer's Settings view: theme, position, startup, refresh rate, and a
+//! read-only table of the built-in prices. Every change is saved immediately.
+//! The gear button in the drawer's header switches between Usage and Settings.
 
 use super::*;
-use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWINDOWATTRIBUTE};
-use windows::Win32::Graphics::Gdi::*;
-use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
 
-const SW: f32 = 560.0; // logical width
-const CLS_SETTINGS: PCWSTR = w!("ClaudeUsageSettings");
-const T_CARET: usize = 4;
-const STYLE: WINDOW_STYLE =
-    WINDOW_STYLE(WS_OVERLAPPED.0 | WS_CAPTION.0 | WS_SYSMENU.0 | WS_MINIMIZEBOX.0);
-
-#[derive(Clone, PartialEq)]
+/// Something clickable in the drawer (logical panel coordinates).
+#[derive(Clone, Copy, PartialEq)]
 pub(super) enum Hit {
+    Gear,
     Theme(&'static str),
     Dock(&'static str),
     Startup,
     Refresh(u32),
-    Price(String, usize),
-    Reset,
-    OpenConfig,
     OpenTranscripts,
+    Quit,
 }
 
-pub(super) struct SettingsUi {
-    hwnd: HWND,
-    k: f32,
-    hits: Vec<([f32; 4], Hit)>,
-    focus: Option<(String, usize)>,
-    buf: String,
-    fresh: bool, // value selected: next keystroke replaces it
-    caret: bool,
-    size: (i32, i32),
-}
+pub(super) type Hits = Vec<([f32; 4], Hit)>;
 
-pub(super) fn register(hinst: windows::Win32::Foundation::HINSTANCE) {
-    unsafe {
-        let wc = WNDCLASSEXW {
-            cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
-            lpfnWndProc: Some(settings_proc),
-            hInstance: hinst,
-            hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
-            // MAKEINTRESOURCE(1): the app icon embedded by build.rs
-            hIcon: LoadIconW(hinst, PCWSTR(std::ptr::without_provenance(1))).unwrap_or_default(),
-            lpszClassName: CLS_SETTINGS,
-            ..Default::default()
-        };
-        RegisterClassExW(&wc);
-    }
-}
+/// Height of the settings body (kept within the usage view's minimum so the
+/// drawer doesn't change size when switching views).
+pub(super) const SETTINGS_BODY_H: f32 = GENERAL_H + 14.0 + PRICES_H + 14.0 + 24.0;
+const ROW_H: f32 = 52.0;
+const GENERAL_H: f32 = 40.0 + 4.0 * ROW_H;
+/// Models in the price table: the current generation.
+const PRICE_ROWS: [&str; 4] = ["fable-5-2", "opus-5-5", "sonnet-5-5", "haiku-5-5"];
+const PRICE_ROW_H: f32 = 26.0;
+const PRICES_H: f32 = 84.0 + PRICE_ROWS.len() as f32 * PRICE_ROW_H + 32.0;
 
+/// "$4.00", "$0.20", "$0.125"
 fn fmt_price(v: f64) -> String {
-    let s = format!("{v:.4}");
-    s.trim_end_matches('0').trim_end_matches('.').to_string()
-}
-
-fn is_light(th: &Theme) -> bool {
-    std::ptr::eq(th, &LIGHT)
+    if (v * 100.0 - (v * 100.0).round()).abs() < 1e-9 {
+        format!("${v:.2}")
+    } else {
+        format!("${v:.3}")
+    }
 }
 
 impl App {
@@ -67,20 +44,7 @@ impl App {
         self.cfg.save();
         self.theme = resolve_theme(t);
         self.render_readout();
-        if self.panel_open && self.anim.is_none() {
-            self.render_panel();
-            let (w, h) = self.panel_size;
-            sys::layered_show(
-                self.panel,
-                &self.panel_bgra,
-                w,
-                h,
-                self.panel_x,
-                self.panel_y,
-                255,
-            );
-        }
-        self.settings_theme_changed();
+        self.redraw_panel();
     }
 
     pub(super) fn set_dock(&mut self, d: &str) {
@@ -88,6 +52,7 @@ impl App {
         self.cfg.save();
         self.locator.invalidate();
         self.render_readout();
+        self.redraw_panel();
     }
 
     pub(super) fn set_refresh(&mut self, ms: u32) {
@@ -97,376 +62,103 @@ impl App {
             let _ = KillTimer(self.readout, T_TICK);
             SetTimer(self.readout, T_TICK, ms.clamp(500, 60_000), None);
         }
+        self.redraw_panel();
     }
 
-    // --------------------------------------------------------- lifecycle --
+    /// Open the drawer on its Settings view.
     pub(super) fn open_settings(&mut self) {
-        if let Some(s) = &self.settings {
+        self.show_settings = true;
+        if self.panel_open {
+            self.redraw_panel();
             unsafe {
-                let _ = ShowWindow(s.hwnd, SW_RESTORE);
-                let _ = SetForegroundWindow(s.hwnd);
+                let _ = SetForegroundWindow(self.panel);
             }
-            return;
-        }
-        unsafe {
-            let hinst: windows::Win32::Foundation::HINSTANCE =
-                GetModuleHandleW(None).map(|h| h.into()).unwrap_or_default();
-            let Ok(hwnd) = CreateWindowExW(
-                WS_EX_APPWINDOW,
-                CLS_SETTINGS,
-                w!("Claude Usage Widget — Settings"),
-                STYLE,
-                CW_USEDEFAULT,
-                CW_USEDEFAULT,
-                100,
-                100,
-                None,
-                None,
-                hinst,
-                None,
-            ) else {
-                return;
-            };
-            let k = GetDpiForWindow(hwnd) as f32 / 96.0;
-            self.settings = Some(SettingsUi {
-                hwnd,
-                k,
-                hits: Vec::new(),
-                focus: None,
-                buf: String::new(),
-                fresh: false,
-                caret: true,
-                size: (0, 0),
-            });
-            self.settings_theme_changed();
-            self.fit_settings_window(true);
-            let _ = ShowWindow(hwnd, SW_SHOW);
-            let _ = SetForegroundWindow(hwnd);
+        } else {
+            self.closed_at = None;
+            self.open_panel();
         }
     }
 
-    fn settings_height(&self) -> f32 {
-        settings_height_for(&self.cfg.cfg)
-    }
-
-    /// Size the window so its client area matches the content (and centre it).
-    fn fit_settings_window(&mut self, center: bool) {
-        let h = self.settings_height();
-        let Some(s) = self.settings.as_mut() else {
-            return;
-        };
-        let (cw, ch) = ((SW * s.k).round() as i32, (h * s.k).round() as i32);
-        if s.size == (cw, ch) && !center {
-            return;
-        }
-        s.size = (cw, ch);
-        unsafe {
-            let mut r = RECT {
-                left: 0,
-                top: 0,
-                right: cw,
-                bottom: ch,
-            };
-            let dpi = GetDpiForWindow(s.hwnd);
-            let _ = AdjustWindowRectExForDpi(&mut r, STYLE, false, WS_EX_APPWINDOW, dpi);
-            let (ww, wh) = (r.right - r.left, r.bottom - r.top);
-            let mut flags = SWP_NOZORDER | SWP_NOACTIVATE;
-            let (mut x, mut y) = (0, 0);
-            if center {
-                let (sw, sh) = sys::screen_size();
-                x = (sw - ww) / 2;
-                y = ((sh - wh) / 2).max(0);
-            } else {
-                flags |= SWP_NOMOVE;
-            }
-            let _ = SetWindowPos(s.hwnd, None, x, y, ww, wh, flags);
-            let _ = InvalidateRect(s.hwnd, None, false);
-        }
-    }
-
-    /// Title bar colours follow the theme.
-    pub(super) fn settings_theme_changed(&mut self) {
-        let light = is_light(self.theme);
-        let Some(s) = &self.settings else { return };
-        unsafe {
-            let dark = BOOL::from(!light);
-            let _ = DwmSetWindowAttribute(
-                s.hwnd,
-                DWMWINDOWATTRIBUTE(20), // DWMWA_USE_IMMERSIVE_DARK_MODE
-                &dark as *const _ as *const _,
-                4,
-            );
-            let bg: u32 = if light { 0x00f3f3f3 } else { 0x00202020 };
-            let _ = DwmSetWindowAttribute(
-                s.hwnd,
-                DWMWINDOWATTRIBUTE(35), // DWMWA_CAPTION_COLOR
-                &bg as *const _ as *const _,
-                4,
-            );
-            let _ = InvalidateRect(s.hwnd, None, false);
-        }
-    }
-
-    pub(super) fn settings_invalidate(&self) {
-        if let Some(s) = &self.settings {
-            unsafe {
-                let _ = InvalidateRect(s.hwnd, None, false);
-            }
-        }
-    }
-
-    // ----------------------------------------------------------- drawing --
-    fn paint_settings(&mut self, hwnd: HWND) {
-        self.fit_settings_window(false);
-        let th = self.theme;
-        let startup = sys::startup_enabled();
-        let cfg = self.cfg.cfg.clone();
-        let Some(s) = self.settings.as_mut() else {
-            return;
-        };
-        let k = s.k;
-        let edit = s.focus.as_ref().map(|(m, j)| FieldEdit {
-            model: m,
-            j: *j,
-            buf: &s.buf,
-            fresh: s.fresh,
-            caret: s.caret,
-        });
-        let (c, hits) = draw_settings(&self.fonts, th, &cfg, startup, k, edit);
-        s.hits = hits;
-        // blit
-        let (pw, phh) = (c.pm.width() as i32, c.pm.height() as i32);
-        let bgra = c.to_bgra(0);
-        unsafe {
-            let mut ps = PAINTSTRUCT::default();
-            let hdc = BeginPaint(hwnd, &mut ps);
-            let bmi = BITMAPINFO {
-                bmiHeader: BITMAPINFOHEADER {
-                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                    biWidth: pw,
-                    biHeight: -phh,
-                    biPlanes: 1,
-                    biBitCount: 32,
-                    biCompression: BI_RGB.0,
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-            SetDIBitsToDevice(
-                hdc,
-                0,
-                0,
-                pw as u32,
-                phh as u32,
-                0,
-                0,
-                0,
-                phh as u32,
-                bgra.as_ptr() as *const _,
-                &bmi,
-                DIB_RGB_COLORS,
-            );
-            let _ = EndPaint(hwnd, &ps);
+    pub(super) fn set_view(&mut self, settings: bool) {
+        if self.show_settings != settings {
+            self.show_settings = settings;
+            self.redraw_panel();
         }
     }
 
     // ------------------------------------------------------------- input --
-    fn settings_hit(&self, px: i32, py: i32) -> Option<Hit> {
-        let s = self.settings.as_ref()?;
-        let (x, y) = (px as f32 / s.k, py as f32 / s.k);
-        s.hits
+    /// Hit test in panel-window pixels (the window includes the shadow margin).
+    pub(super) fn panel_hit(&self, px: i32, py: i32) -> Option<Hit> {
+        let k = self.scale();
+        let (x, y) = (px as f32 / k - SHADOW_M, py as f32 / k - SHADOW_M);
+        self.panel_hits
             .iter()
             .find(|(r, _)| x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3])
-            .map(|(_, h)| h.clone())
+            .map(|(_, h)| *h)
     }
 
-    fn commit_price(&mut self) {
-        let Some(s) = self.settings.as_mut() else {
-            return;
-        };
-        if let Some((model, j)) = s.focus.take() {
-            if let Ok(v) = s.buf.trim().parse::<f64>() {
-                if v.is_finite() && v >= 0.0 {
-                    if let Some(p) = self.cfg.cfg.prices.get_mut(&model) {
-                        p[j] = v;
-                        self.cfg.save();
-                    }
-                }
-            }
-            s.buf.clear();
-            unsafe {
-                let _ = KillTimer(s.hwnd, T_CARET);
-            }
-        }
-    }
-
-    fn focus_price(&mut self, model: String, j: usize) {
-        let value = self
-            .cfg
-            .cfg
-            .prices
-            .get(&model)
-            .map(|p| fmt_price(p[j]))
-            .unwrap_or_default();
-        let Some(s) = self.settings.as_mut() else {
-            return;
-        };
-        s.focus = Some((model, j));
-        s.buf = value;
-        s.fresh = true;
-        s.caret = true;
-        unsafe { SetTimer(s.hwnd, T_CARET, 530, None) };
-    }
-
-    fn settings_click(&mut self, px: i32, py: i32) {
-        let hit = self.settings_hit(px, py);
-        if !matches!(hit, Some(Hit::Price(..))) {
-            self.commit_price();
-        }
-        match hit {
+    pub(super) fn panel_click(&mut self, px: i32, py: i32) {
+        match self.panel_hit(px, py) {
+            Some(Hit::Gear) => self.set_view(!self.show_settings),
             Some(Hit::Theme(t)) => self.set_theme(t),
             Some(Hit::Dock(d)) => self.set_dock(d),
-            Some(Hit::Startup) => sys::set_startup(!sys::startup_enabled()),
+            Some(Hit::Startup) => {
+                sys::set_startup(!sys::startup_enabled());
+                self.redraw_panel();
+            }
             Some(Hit::Refresh(ms)) => self.set_refresh(ms),
-            Some(Hit::Price(m, j)) => {
-                self.commit_price();
-                self.focus_price(m, j);
-            }
-            Some(Hit::Reset) => {
-                self.cfg.cfg.prices = crate::config::Config::default().prices;
-                self.cfg.save();
-            }
-            Some(Hit::OpenConfig) => {
-                let p = format!("\"{}\"", config::config_path().display());
-                sys::shell_open("notepad.exe", Some(&p));
-            }
             Some(Hit::OpenTranscripts) => {
                 sys::shell_open(&config::projects_dir().display().to_string(), None)
             }
+            Some(Hit::Quit) => self.handle_menu(M_QUIT),
             None => {}
         }
-        self.settings_invalidate();
-    }
-
-    fn settings_char(&mut self, ch: char) {
-        let Some(s) = self.settings.as_mut() else {
-            return;
-        };
-        if s.focus.is_none() {
-            return;
-        }
-        // Tab/Enter/Esc also arrive here as characters (TranslateMessage): ignore them
-        if !matches!(ch, '0'..='9' | '.' | ',' | '\u{8}') {
-            return;
-        }
-        if s.fresh && ch != '\u{8}' {
-            s.buf.clear();
-        }
-        s.fresh = false;
-        match ch {
-            '0'..='9' if s.buf.len() < 10 => s.buf.push(ch),
-            '.' | ',' if !s.buf.contains('.') => s.buf.push('.'),
-            '\u{8}' => {
-                s.buf.pop();
-            }
-            _ => return,
-        }
-        s.caret = true;
-        self.settings_invalidate();
-    }
-
-    /// Returns true if the key was handled.
-    fn settings_key(&mut self, vk: u16) -> bool {
-        let focus = self.settings.as_ref().and_then(|s| s.focus.clone());
-        match (vk, focus) {
-            (k, Some((model, j))) if k == VK_TAB.0 => {
-                self.commit_price();
-                let back = unsafe { GetKeyState(VK_SHIFT.0 as i32) } < 0;
-                let models: Vec<String> = self.cfg.cfg.prices.keys().cloned().collect();
-                let mi = models.iter().position(|m| *m == model).unwrap_or(0);
-                let idx = (mi * 4 + j) as isize + if back { -1 } else { 1 };
-                let total = (models.len() * 4) as isize;
-                let idx = idx.rem_euclid(total.max(1)) as usize;
-                self.focus_price(models[idx / 4].clone(), idx % 4);
-            }
-            (k, Some(_)) if k == VK_RETURN.0 => self.commit_price(),
-            (k, Some(_)) if k == VK_ESCAPE.0 => {
-                if let Some(s) = self.settings.as_mut() {
-                    s.focus = None;
-                    s.buf.clear();
-                }
-            }
-            (k, None) if k == VK_ESCAPE.0 => unsafe {
-                if let Some(s) = &self.settings {
-                    let _ = PostMessageW(s.hwnd, WM_CLOSE, WPARAM(0), LPARAM(0));
-                }
-            },
-            _ => return false,
-        }
-        self.settings_invalidate();
-        true
     }
 }
 
-/// The price field being edited (for drawing).
-pub(super) struct FieldEdit<'b> {
-    pub model: &'b str,
-    pub j: usize,
-    pub buf: &'b str,
-    pub fresh: bool,
-    pub caret: bool,
+// ----------------------------------------------------------------- drawing --
+/// Gear button in the drawer header, top right. `on` = Settings view showing.
+pub(super) fn gear_button(c: &mut Canvas, th: &Theme, hits: &mut Hits, x: f32, y: f32, on: bool) {
+    let s = 32.0;
+    let ink = if on { [255, 255, 255, 255] } else { th.text2 };
+    if on {
+        c.rect(x, y, s, s, th.accent, 8.0);
+    } else {
+        c.card(x, y, s, s, th.card, th.card_border, 8.0);
+    }
+    let (cx, cy) = (x + s / 2.0, y + s / 2.0);
+    for i in 0..8 {
+        let a = (i as f32 * 45.0).to_radians();
+        let (dx, dy) = (a.cos(), a.sin());
+        c.line(
+            cx + dx * 5.5,
+            cy + dy * 5.5,
+            cx + dx * 8.6,
+            cy + dy * 8.6,
+            ink,
+            3.0,
+        );
+    }
+    c.ring(cx, cy, 7.0, 3.4, 1.0, ink, ink);
+    hits.push(([x, y, s, s], Hit::Gear));
 }
 
-pub(super) fn settings_height_for(cfg: &crate::config::Config) -> f32 {
-    let rows = cfg.prices.len() as f32;
-    84.0 + 288.0 + 16.0 + (88.0 + rows * 38.0 + 52.0) + 16.0 + 40.0
-}
-
-/// Draw the settings client area; also returns the clickable regions.
-pub(super) fn draw_settings<'a>(
-    fonts: &'a Fonts,
+/// The Settings view body, drawn inside the drawer at (x, y) with width w.
+pub(super) fn draw_settings(
+    c: &mut Canvas,
     th: &Theme,
     cfg: &crate::config::Config,
     startup: bool,
-    k: f32,
-    edit: Option<FieldEdit>,
-) -> (Canvas<'a>, Vec<([f32; 4], Hit)>) {
-    let h = settings_height_for(cfg);
-    let mut c = Canvas::new(SW, h, k, fonts);
-    let mut hits: Vec<([f32; 4], Hit)> = Vec::new();
-    let light = is_light(th);
-    let bg = if light {
-        [243, 243, 243, 255]
-    } else {
-        [32, 32, 32, 255]
-    };
-    let field_bg = if light {
-        [255, 255, 255, 255]
-    } else {
-        [255, 255, 255, 14]
-    };
-    c.rect(0.0, 0.0, SW, h, bg, 0.0);
-
-    // header
-    c.spark(32.0, 40.0, 11.0, th.accent);
-    c.text(54.0, 22.0, "Settings", 20.0, th.text1, SB, "la");
-    c.text(
-        54.0,
-        52.0,
-        "Changes are saved automatically",
-        11.0,
-        th.text3,
-        R,
-        "la",
-    );
-
+    hits: &mut Hits,
+    x: f32,
+    y: f32,
+    w: f32,
+) {
     // ---- General
-    let (x, w) = (20.0, SW - 40.0);
-    let mut y = 84.0;
-    c.card(x, y, w, 288.0, th.card, th.card_border, 8.0);
-    c.text(x + 16.0, y + 14.0, "General", 12.0, th.text1, SB, "la");
+    c.card(x, y, w, GENERAL_H, th.card, th.card_border, 8.0);
+    c.text(x + 16.0, y + 15.0, "General", 12.0, th.text1, SB, "la");
     let rows: [(&str, &str); 4] = [
-        ("Theme", "Panel colours. System follows Windows' app mode."),
+        ("Theme", "Drawer colours. System follows Windows' app mode."),
         ("Position", "Where the readout sits on the taskbar"),
         (
             "Start with Windows",
@@ -475,13 +167,13 @@ pub(super) fn draw_settings<'a>(
         ("Refresh every", "How often transcripts are rescanned"),
     ];
     for (i, (label, desc)) in rows.iter().enumerate() {
-        let ry = y + 40.0 + i as f32 * 60.0;
+        let ry = y + 40.0 + i as f32 * ROW_H;
         if i > 0 {
             c.line(x + 16.0, ry, x + w - 16.0, ry, th.grid, 1.0);
         }
-        c.text(x + 16.0, ry + 13.0, label, 12.0, th.text1, R, "la");
-        c.text(x + 16.0, ry + 32.0, desc, 10.0, th.text3, R, "la");
-        let (right, cy) = (x + w - 16.0, ry + 30.0);
+        c.text(x + 16.0, ry + 10.0, label, 12.0, th.text1, R, "la");
+        c.text(x + 16.0, ry + 29.0, desc, 10.0, th.text3, R, "la");
+        let (right, cy) = (x + w - 16.0, ry + ROW_H / 2.0);
         match i {
             0 => {
                 let sel = match cfg.theme.as_str() {
@@ -490,9 +182,9 @@ pub(super) fn draw_settings<'a>(
                     _ => 0,
                 };
                 segmented(
-                    &mut c,
+                    c,
                     th,
-                    &mut hits,
+                    hits,
                     right,
                     cy,
                     &[
@@ -506,9 +198,9 @@ pub(super) fn draw_settings<'a>(
             1 => {
                 let sel = usize::from(cfg.dock == "right");
                 segmented(
-                    &mut c,
+                    c,
                     th,
-                    &mut hits,
+                    hits,
                     right,
                     cy,
                     &[
@@ -518,7 +210,7 @@ pub(super) fn draw_settings<'a>(
                     sel,
                 );
             }
-            2 => toggle(&mut c, th, &mut hits, right, cy, startup),
+            2 => toggle(c, th, hits, right, cy, startup),
             _ => {
                 let opts = [1000u32, 3000, 5000, 10000];
                 let sel = opts
@@ -526,9 +218,9 @@ pub(super) fn draw_settings<'a>(
                     .position(|v| *v == cfg.refresh_ms)
                     .unwrap_or(usize::MAX);
                 segmented(
-                    &mut c,
+                    c,
                     th,
-                    &mut hits,
+                    hits,
                     right,
                     cy,
                     &[
@@ -543,15 +235,13 @@ pub(super) fn draw_settings<'a>(
         }
     }
 
-    // ---- Prices
-    y += 288.0 + 16.0;
-    let n = cfg.prices.len() as f32;
-    let ph = 88.0 + n * 38.0 + 52.0;
-    c.card(x, y, w, ph, th.card, th.card_border, 8.0);
-    c.text(x + 16.0, y + 14.0, "Prices", 12.0, th.text1, SB, "la");
+    // ---- Prices (read-only)
+    let y = y + GENERAL_H + 14.0;
+    c.card(x, y, w, PRICES_H, th.card, th.card_border, 8.0);
+    c.text(x + 16.0, y + 15.0, "Prices", 12.0, th.text1, SB, "la");
     c.text(
         x + w - 16.0,
-        y + 15.0,
+        y + 16.0,
         "USD per million tokens",
         11.0,
         th.text3,
@@ -561,71 +251,44 @@ pub(super) fn draw_settings<'a>(
     c.text(
         x + 16.0,
         y + 36.0,
-        "Used for the $ estimates. Matched against the model name.",
+        "Anthropic's published API prices, built in and used for the $ estimates.",
         10.0,
         th.text3,
         R,
         "la",
     );
-    let (fw, fg) = (82.0, 10.0);
-    let col = |j: usize| x + w - 16.0 - fw - (3 - j) as f32 * (fw + fg);
-    let hy = y + 64.0;
+    let cols = [
+        "Input",
+        "Output",
+        "Cache write 5m",
+        "Cache write 1h",
+        "Cache read",
+    ];
+    let col_w = 104.0;
+    let col_r = |j: usize| x + w - 16.0 - (cols.len() - 1 - j) as f32 * col_w;
+    let hy = y + 60.0;
     c.text(x + 16.0, hy, "Model", 10.0, th.text3, SB, "la");
-    for (j, name) in ["Input", "Output", "Cache write", "Cache read"]
-        .iter()
-        .enumerate()
-    {
-        c.text(col(j) + fw - 8.0, hy, name, 10.0, th.text3, SB, "ra");
+    for (j, name) in cols.iter().enumerate() {
+        c.text(col_r(j), hy, name, 10.0, th.text3, SB, "ra");
     }
-    for (i, (model, p)) in cfg.prices.iter().enumerate() {
-        let ry = y + 86.0 + i as f32 * 38.0;
-        c.text(x + 16.0, ry + 15.0, model, 12.0, th.text1, R, "lm");
-        #[allow(clippy::needless_range_loop)]
-        // j picks the column, the value and the hit target
-        for j in 0..4 {
-            let fx = col(j);
-            let field = edit.as_ref().filter(|e| e.model == model && e.j == j);
-            let focused = field.is_some();
-            c.rect(fx, ry, fw, 30.0, field_bg, 4.0);
-            let border = if focused { th.accent } else { th.card_border };
-            c.card(fx, ry, fw, 30.0, [0, 0, 0, 0], border, 4.0);
-            if focused {
-                c.rect(fx + 1.0, ry + 28.0, fw - 2.0, 2.0, th.accent, 1.0);
-            }
-            let text = match field {
-                Some(e) => e.buf.to_string(),
-                None => fmt_price(p[j]),
-            };
-            if field.is_some_and(|e| e.fresh) && !text.is_empty() {
-                let tw = c.tw(&text, 12.0, R);
-                let sel = [th.accent[0], th.accent[1], th.accent[2], 90];
-                c.rect(fx + fw - 12.0 - tw, ry + 6.0, tw + 4.0, 18.0, sel, 2.0);
-            }
-            c.text(fx + fw - 10.0, ry + 15.0, &text, 12.0, th.text1, R, "rm");
-            if field.is_some_and(|e| e.caret && !e.fresh) {
-                c.line(
-                    fx + fw - 9.0,
-                    ry + 8.0,
-                    fx + fw - 9.0,
-                    ry + 22.0,
-                    th.accent,
-                    1.0,
-                );
-            }
-            hits.push(([fx, ry, fw, 30.0], Hit::Price(model.clone(), j)));
+    for (i, key) in PRICE_ROWS.iter().enumerate() {
+        let Some((_, name, p)) = crate::pricing::TABLE.iter().find(|(k, ..)| k == key) else {
+            continue;
+        };
+        let ry = y + 84.0 + i as f32 * PRICE_ROW_H;
+        c.line(x + 16.0, ry - 4.0, x + w - 16.0, ry - 4.0, th.grid, 1.0);
+        c.text(x + 16.0, ry + 9.0, name, 12.0, th.text1, R, "lm");
+        for (j, v) in [p.input, p.output, p.write_5m, p.write_1h, p.read]
+            .iter()
+            .enumerate()
+        {
+            c.text(col_r(j), ry + 9.0, &fmt_price(*v), 12.0, th.text2, R, "rm");
         }
     }
-    let by = y + ph - 46.0;
-    let label = "Reset to defaults";
-    let bw = c.tw(label, 11.0, R) + 28.0;
-    let bx = x + w - 16.0 - bw;
-    c.card(bx, by, bw, 30.0, field_bg, th.card_border, 4.0);
-    c.text(bx + bw / 2.0, by + 15.0, label, 11.0, th.text1, R, "mm");
-    hits.push(([bx, by, bw, 30.0], Hit::Reset));
     c.text(
         x + 16.0,
-        by + 15.0,
-        "Tab: next field · Enter: save · Esc: cancel",
+        y + PRICES_H - 18.0,
+        "Older models use their own published prices. Claude Code writes 1-hour cache entries.",
         10.0,
         th.text3,
         R,
@@ -633,26 +296,22 @@ pub(super) fn draw_settings<'a>(
     );
 
     // ---- links
-    let ly = y + ph + 20.0;
-    let mut lx = x + 4.0;
-    for (label, hit) in [
-        ("Open config file", Hit::OpenConfig),
-        ("Open transcripts folder", Hit::OpenTranscripts),
-    ] {
-        let tw = c.tw(label, 11.0, R);
-        c.text(lx, ly, label, 11.0, th.accent, R, "la");
-        hits.push(([lx - 4.0, ly - 4.0, tw + 8.0, 22.0], hit));
-        lx += tw + 24.0;
-    }
-
-    (c, hits)
+    let ly = y + PRICES_H + 14.0 + 12.0;
+    let label = "Open transcripts folder";
+    let tw = c.tw(label, 11.0, R);
+    c.text(x + 4.0, ly, label, 11.0, th.accent, R, "lm");
+    hits.push(([x, ly - 11.0, tw + 8.0, 22.0], Hit::OpenTranscripts));
+    let label = "Quit widget";
+    let tw = c.tw(label, 11.0, R);
+    c.text(x + w - 4.0, ly, label, 11.0, th.text2, R, "rm");
+    hits.push(([x + w - 8.0 - tw, ly - 11.0, tw + 8.0, 22.0], Hit::Quit));
 }
 
 // ------------------------------------------------------------ controls -----
 fn segmented(
     c: &mut Canvas,
     th: &Theme,
-    hits: &mut Vec<([f32; 4], Hit)>,
+    hits: &mut Hits,
     right: f32,
     cy: f32,
     items: &[(&str, Hit)],
@@ -673,19 +332,12 @@ fn segmented(
         } else {
             c.text(x + w / 2.0, cy, label, 11.0, th.text2, R, "mm");
         }
-        hits.push(([x, cy - h / 2.0, w, h], hit.clone()));
+        hits.push(([x, cy - h / 2.0, w, h], *hit));
         x += w;
     }
 }
 
-fn toggle(
-    c: &mut Canvas,
-    th: &Theme,
-    hits: &mut Vec<([f32; 4], Hit)>,
-    right: f32,
-    cy: f32,
-    on: bool,
-) {
+fn toggle(c: &mut Canvas, th: &Theme, hits: &mut Hits, right: f32, cy: f32, on: bool) {
     let (w, h) = (44.0, 22.0);
     let x = right - w;
     if on {
@@ -705,90 +357,4 @@ fn toggle(
         "rm",
     );
     hits.push(([x - 40.0, cy - h / 2.0, w + 40.0, h], Hit::Startup));
-}
-
-// --------------------------------------------------------- window proc -----
-unsafe extern "system" fn settings_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
-    let xy = || {
-        (
-            (lp.0 & 0xffff) as i16 as i32,
-            ((lp.0 >> 16) & 0xffff) as i16 as i32,
-        )
-    };
-    match msg {
-        WM_PAINT => {
-            if with_app(|a| a.paint_settings(hwnd)).is_none() {
-                return DefWindowProcW(hwnd, msg, wp, lp);
-            }
-            LRESULT(0)
-        }
-        WM_ERASEBKGND => LRESULT(1),
-        WM_LBUTTONDOWN => {
-            let (x, y) = xy();
-            with_app(|a| a.settings_click(x, y));
-            LRESULT(0)
-        }
-        WM_SETCURSOR if (lp.0 & 0xffff) as u32 == HTCLIENT => {
-            let mut pt = POINT::default();
-            let _ = GetCursorPos(&mut pt);
-            let _ = ScreenToClient(hwnd, &mut pt);
-            let hand = with_app(|a| a.settings_hit(pt.x, pt.y).is_some()).unwrap_or(false);
-            let cur =
-                LoadCursorW(None, if hand { IDC_HAND } else { IDC_ARROW }).unwrap_or_default();
-            SetCursor(cur);
-            LRESULT(1)
-        }
-        WM_CHAR => {
-            if let Some(ch) = char::from_u32(wp.0 as u32) {
-                with_app(|a| a.settings_char(ch));
-            }
-            LRESULT(0)
-        }
-        WM_KEYDOWN => {
-            if with_app(|a| a.settings_key(wp.0 as u16)).unwrap_or(false) {
-                LRESULT(0)
-            } else {
-                DefWindowProcW(hwnd, msg, wp, lp)
-            }
-        }
-        WM_TIMER if wp.0 == T_CARET => {
-            with_app(|a| {
-                if let Some(s) = a.settings.as_mut() {
-                    s.caret = !s.caret;
-                }
-                a.settings_invalidate();
-            });
-            LRESULT(0)
-        }
-        WM_DPICHANGED => {
-            let r = &*(lp.0 as *const RECT);
-            with_app(|a| {
-                if let Some(s) = a.settings.as_mut() {
-                    s.k = (wp.0 & 0xffff) as f32 / 96.0;
-                    s.size = (0, 0);
-                }
-            });
-            let _ = SetWindowPos(
-                hwnd,
-                None,
-                r.left,
-                r.top,
-                r.right - r.left,
-                r.bottom - r.top,
-                SWP_NOZORDER | SWP_NOACTIVATE,
-            );
-            with_app(|a| a.fit_settings_window(false));
-            LRESULT(0)
-        }
-        WM_CLOSE => {
-            with_app(|a| a.commit_price());
-            let _ = DestroyWindow(hwnd);
-            LRESULT(0)
-        }
-        WM_DESTROY => {
-            with_app(|a| a.settings = None);
-            LRESULT(0)
-        }
-        _ => DefWindowProcW(hwnd, msg, wp, lp),
-    }
 }

@@ -174,7 +174,10 @@ struct App {
     backdrop: Option<Pixmap>,
     anim: Option<Anim>,
     closed_at: Option<Instant>,
-    settings: Option<settings::SettingsUi>,
+    /// The drawer is showing Settings instead of usage.
+    show_settings: bool,
+    /// Clickable regions of the drawer, in logical panel coordinates.
+    panel_hits: settings::Hits,
 }
 
 thread_local! {
@@ -219,7 +222,6 @@ pub fn run() {
             };
             RegisterClassExW(&wc);
         }
-        settings::register(hinst);
         let owner = sys::taskbar().unwrap_or_default();
         let readout = CreateWindowExW(
             WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
@@ -275,7 +277,8 @@ pub fn run() {
             backdrop: None,
             anim: None,
             closed_at: None,
-            settings: None,
+            show_settings: false,
+            panel_hits: Vec::new(),
         };
         APP.with(|a| *a.borrow_mut() = Some(app));
         with_app(|a| a.tick());
@@ -302,14 +305,16 @@ impl App {
         }
         // pick up Windows light/dark switches live
         let theme = resolve_theme(&self.cfg.cfg.theme);
-        if !std::ptr::eq(theme, self.theme) {
-            self.theme = theme;
-            self.settings_theme_changed();
-        }
+        self.theme = theme;
         self.bar_theme = taskbar_theme();
         self.store.scan();
-        self.stats = Some(self.store.stats(&self.cfg.cfg));
+        self.stats = Some(self.store.stats());
         self.render_readout();
+        self.redraw_panel();
+    }
+
+    /// Re-render the open drawer in place (not while it slides).
+    fn redraw_panel(&mut self) {
         if self.panel_open && self.anim.is_none() {
             self.render_panel();
             sys::layered_show(
@@ -419,13 +424,17 @@ impl App {
 
     fn render_panel(&mut self) {
         let Some(s) = self.stats.as_ref() else { return };
-        let full = draw_panel(
+        let startup = self.show_settings && sys::startup_enabled();
+        let view = self.show_settings.then_some((&self.cfg.cfg, startup));
+        let (full, hits) = draw_panel(
             &self.fonts,
             self.theme,
             s,
             self.scale(),
             self.backdrop.as_ref(),
+            view,
         );
+        self.panel_hits = hits;
         self.panel_size = (full.pm.width() as i32, full.pm.height() as i32);
         self.panel_bgra = full.to_bgra(0);
     }
@@ -447,6 +456,7 @@ impl App {
             .closed_at
             .is_none_or(|t| t.elapsed() > Duration::from_millis(350))
         {
+            self.show_settings = false;
             self.open_panel();
         }
     }
@@ -572,7 +582,7 @@ impl App {
             M_DOCK_RIGHT => self.set_dock("right"),
             M_STARTUP => {
                 sys::set_startup(!sys::startup_enabled());
-                self.settings_invalidate();
+                self.redraw_panel();
             }
             M_TRANSCRIPTS => sys::shell_open(&config::projects_dir().display().to_string(), None),
             M_SETTINGS => self.open_settings(),
@@ -648,7 +658,7 @@ fn show_menu(owner: HWND) {
         );
         let _ = AppendMenuW(m, MF_SEPARATOR, 0, PCWSTR::null());
         let _ = AppendMenuW(m, MF_STRING, M_TRANSCRIPTS, w!("Open transcripts folder"));
-        let _ = AppendMenuW(m, MF_STRING, M_SETTINGS, w!("Settings…"));
+        let _ = AppendMenuW(m, MF_STRING, M_SETTINGS, w!("Settings"));
         let _ = AppendMenuW(m, MF_SEPARATOR, 0, PCWSTR::null());
         let _ = AppendMenuW(m, MF_STRING, M_QUIT, w!("Quit"));
         let mut pt = POINT::default();
@@ -712,10 +722,8 @@ unsafe extern "system" fn readout_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPA
             with_app(|a| a.toggle_panel());
             LRESULT(0)
         }
-        WM_RBUTTONUP => {
-            show_menu(hwnd);
-            LRESULT(0)
-        }
+        // no menu on the taskbar readout: options live in the drawer
+        WM_RBUTTONUP | WM_CONTEXTMENU => LRESULT(0),
         WM_OPEN_SETTINGS => {
             with_app(|a| a.open_settings());
             LRESULT(0)
@@ -740,8 +748,32 @@ unsafe extern "system" fn panel_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARA
             DefWindowProcW(hwnd, msg, wp, lp)
         }
         WM_KEYDOWN if wp.0 == VK_ESCAPE.0 as usize => {
-            with_app(|a| a.close_panel());
+            with_app(|a| {
+                if a.show_settings {
+                    a.set_view(false)
+                } else {
+                    a.close_panel()
+                }
+            });
             LRESULT(0)
+        }
+        WM_LBUTTONUP => {
+            let (x, y) = (
+                (lp.0 & 0xffff) as i16 as i32,
+                ((lp.0 >> 16) & 0xffff) as i16 as i32,
+            );
+            with_app(|a| a.panel_click(x, y));
+            LRESULT(0)
+        }
+        WM_SETCURSOR if (lp.0 & 0xffff) as u32 == HTCLIENT => {
+            let mut pt = POINT::default();
+            let _ = GetCursorPos(&mut pt);
+            let _ = windows::Win32::Graphics::Gdi::ScreenToClient(hwnd, &mut pt);
+            let hand = with_app(|a| a.panel_hit(pt.x, pt.y).is_some()).unwrap_or(false);
+            let cur =
+                LoadCursorW(None, if hand { IDC_HAND } else { IDC_ARROW }).unwrap_or_default();
+            SetCursor(cur);
+            LRESULT(1)
         }
         WM_RBUTTONUP => {
             show_menu(hwnd);
@@ -817,17 +849,21 @@ fn panel_layout(s: &Stats) -> (f32, usize, usize, [f32; 3], [f32; 4]) {
     let gap = 14.0;
     let lh: f32 = left.iter().sum::<f32>() + gap * 2.0;
     let rh: f32 = right.iter().sum::<f32>() + gap * 3.0;
-    ((72.0 + lh.max(rh) + 44.0).floor(), nm, ns, left, right)
+    let body = lh.max(rh).max(settings::SETTINGS_BODY_H);
+    ((72.0 + body + 44.0).floor(), nm, ns, left, right)
 }
 
 /// The whole panel window image: shadow margin + glass panel + sections.
+/// `settings` = Some((config, start-with-Windows)) draws the Settings view.
+/// Also returns the clickable regions.
 fn draw_panel<'a>(
     fonts: &'a Fonts,
     th: &Theme,
     s: &Stats,
     k: f32,
     backdrop: Option<&Pixmap>,
-) -> Canvas<'a> {
+    settings: Option<(&config::Config, bool)>,
+) -> (Canvas<'a>, settings::Hits) {
     let (h, nm, ns, left_h, right_h) = panel_layout(s);
     let (w, pad, gap) = (PANEL_W, 20.0, 14.0);
     let cw = (w - 2.0 * pad - gap) / 2.0;
@@ -845,8 +881,22 @@ fn draw_panel<'a>(
         ),
     }
     c.card(0.0, 0.0, w, h, th.panel, th.panel_border, 12.0);
-    header(&mut c, th, s, pad, w);
+    let mut hits = settings::Hits::new();
+    header(&mut c, th, s, pad, w, settings.is_some(), &mut hits);
     let top = 72.0;
+    if let Some((cfg, startup)) = settings {
+        settings::draw_settings(&mut c, th, cfg, startup, &mut hits, pad, top, w - 2.0 * pad);
+        c.text(
+            pad,
+            h - 22.0,
+            "Changes are saved automatically  ·  Esc to go back",
+            10.0,
+            th.text3,
+            R,
+            "la",
+        );
+        return (frame(fonts, &c, w, h, k), hits);
+    }
     let mut y = top;
     hero(&mut c, th, s, pad, y, cw, left_h[0]);
     y += left_h[0] + gap;
@@ -865,13 +915,17 @@ fn draw_panel<'a>(
     c.text(
         pad,
         h - 22.0,
-        "$ figures are API-list-price estimates, not your plan's billing  ·  Esc to close  ·  right-click for options",
+        "$ figures are API-list-price estimates, not your plan's billing  ·  Esc to close",
         10.0,
         th.text3,
         R,
         "la",
     );
+    (frame(fonts, &c, w, h, k), hits)
+}
 
+/// Add the drop-shadow margin around the drawn panel.
+fn frame<'a>(fonts: &'a Fonts, c: &Canvas, w: f32, h: f32, k: f32) -> Canvas<'a> {
     let m = SHADOW_M;
     let mut full = Canvas::new(w + 2.0 * m, h + 2.0 * m, k, fonts);
     for i in 0..16 {
@@ -940,7 +994,7 @@ pub fn render_screenshots(dir: &std::path::Path) -> std::io::Result<()> {
             }
         }
         let backdrop = crate::draw::blurred_backdrop(&wallpaper, bw, bh, 1);
-        let panel = draw_panel(&fonts, th, &s, k, backdrop.as_ref());
+        let (panel, _) = draw_panel(&fonts, th, &s, k, backdrop.as_ref(), None);
         panel
             .pm
             .save_png(dir.join(format!("panel-{name}.png")))
@@ -967,8 +1021,24 @@ fn card(
     }
 }
 
-fn header(c: &mut Canvas, th: &Theme, s: &Stats, pad: f32, w: f32) {
+fn header(
+    c: &mut Canvas,
+    th: &Theme,
+    s: &Stats,
+    pad: f32,
+    w: f32,
+    in_settings: bool,
+    hits: &mut settings::Hits,
+) {
     c.spark(pad + 14.0, 36.0, 11.0, th.accent);
+    let gear_x = w - pad - 32.0;
+    settings::gear_button(c, th, hits, gear_x, 19.0, in_settings);
+    if in_settings {
+        c.text(pad + 36.0, 19.0, "Settings", 17.0, th.text1, SB, "la");
+        let sub = "Claude Code usage widget";
+        c.text(pad + 36.0, 44.0, sub, 11.0, th.text3, R, "la");
+        return;
+    }
     c.text(pad + 36.0, 19.0, "Claude Code", 17.0, th.text1, SB, "la");
     let upd = format!("Usage  ·  updated {}", Local::now().format("%H:%M:%S"));
     c.text(pad + 36.0, 44.0, &upd, 11.0, th.text3, R, "la");
@@ -981,7 +1051,7 @@ fn header(c: &mut Canvas, th: &Theme, s: &Stats, pad: f32, w: f32) {
         "Idle"
     };
     let tw = c.tw(label, 11.0, SB);
-    let cx = w - pad - tw - 34.0;
+    let cx = gear_x - 10.0 - tw - 34.0;
     c.card(cx, 22.0, tw + 34.0, 26.0, th.card, th.card_border, 13.0);
     c.circle(cx + 15.0, 35.0, 4.0, if live { th.good } else { th.text3 });
     c.text(cx + 25.0, 35.0, label, 11.0, th.text1, SB, "lm");

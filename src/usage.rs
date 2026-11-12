@@ -1,6 +1,6 @@
 //! Incrementally tails Claude Code transcripts and aggregates token usage.
 
-use crate::config::Config;
+use crate::pricing;
 use chrono::{DateTime, Duration, Local, TimeZone, Timelike, Utc};
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
@@ -18,6 +18,7 @@ struct Rec {
     inp: u64,
     out: u64,
     cw: u64,
+    cw_1h: u64,
     cr: u64,
 }
 
@@ -25,13 +26,17 @@ impl Rec {
     fn all(&self) -> u64 {
         self.inp + self.out + self.cw + self.cr
     }
-    fn cost(&self, cfg: &Config) -> f64 {
-        let p = cfg.price_for(&self.model);
-        (self.inp as f64 * p[0]
-            + self.out as f64 * p[1]
-            + self.cw as f64 * p[2]
-            + self.cr as f64 * p[3])
-            / 1e6
+    fn cost(&self) -> f64 {
+        pricing::cost(
+            &self.model,
+            &pricing::Tokens {
+                input: self.inp,
+                output: self.out,
+                write_5m: self.cw - self.cw_1h,
+                write_1h: self.cw_1h,
+                read: self.cr,
+            },
+        )
     }
 }
 
@@ -47,13 +52,13 @@ pub struct Sum {
 }
 
 impl Sum {
-    fn add(&mut self, r: &Rec, cfg: &Config) {
+    fn add(&mut self, r: &Rec) {
         self.inp += r.inp;
         self.out += r.out;
         self.cw += r.cw;
         self.cr += r.cr;
         self.all += r.all();
-        self.cost += r.cost(cfg);
+        self.cost += r.cost();
         self.n += 1;
     }
 }
@@ -222,6 +227,13 @@ impl Store {
             return;
         };
         let n = |k: &str| usage[k].as_u64().unwrap_or(0);
+        // 1-hour cache writes cost more than 5-minute ones; older transcripts
+        // have no breakdown, so treat those writes as 5-minute.
+        let cw = n("cache_creation_input_tokens");
+        let cw_1h = usage["cache_creation"]["ephemeral_1h_input_tokens"]
+            .as_u64()
+            .unwrap_or(0)
+            .min(cw);
         let key = match msg["id"].as_str() {
             Some(id) => format!("{}:{}", id, v["requestId"].as_str().unwrap_or("")),
             None => format!("{}:{}", path.display(), ts),
@@ -235,13 +247,14 @@ impl Store {
                 sess: sess.to_string(),
                 inp: n("input_tokens"),
                 out: n("output_tokens"),
-                cw: n("cache_creation_input_tokens"),
+                cw,
+                cw_1h,
                 cr: n("cache_read_input_tokens"),
             },
         );
     }
 
-    pub fn stats(&self, cfg: &Config) -> Stats {
+    pub fn stats(&self) -> Stats {
         let now = Utc::now();
         let mut recs: Vec<&Rec> = self.records.values().collect();
         recs.sort_by_key(|r| r.t);
@@ -306,10 +319,10 @@ impl Store {
         let week_ago = now - Duration::days(7);
 
         for r in &recs {
-            let cost = r.cost(cfg);
+            let cost = r.cost();
             if let Some(bs) = block_start {
                 if r.t >= bs {
-                    s_block.add(r, cfg);
+                    s_block.add(r);
                     let i = ((r.t - bs).num_seconds() / 600).clamp(0, nbins as i64 - 1) as usize;
                     wbins[i] += r.out;
                 }
@@ -317,13 +330,13 @@ impl Store {
             let age = (now - r.t).num_seconds();
             if (0..3600).contains(&age) {
                 spark[19 - (age / 180) as usize] += r.out;
-                s_hour.add(r, cfg);
+                s_hour.add(r);
             }
             if (0..600).contains(&age) {
-                s_10m.add(r, cfg);
+                s_10m.add(r);
             }
             if r.t >= today0 {
-                s_today.add(r, cfg);
+                s_today.add(r);
                 let name = r.model.trim_start_matches("claude-");
                 *models
                     .entry(if name.is_empty() {
@@ -575,17 +588,9 @@ mod tests {
         assert_eq!(pretty_project("plain"), "plain");
     }
 
-    #[test]
-    fn prices_match_by_substring_with_fallback() {
-        let cfg = Config::default();
-        assert_eq!(cfg.price_for("claude-opus-5-5"), [5.0, 25.0, 6.25, 0.5]);
-        assert_eq!(cfg.price_for("claude-haiku-5-5"), [1.0, 5.0, 1.25, 0.1]);
-        assert_eq!(cfg.price_for("something-else"), cfg.prices["sonnet"]);
-    }
-
     fn line(id: &str, req: &str, ts: DateTime<Utc>, out: u64) -> String {
         format!(
-            r#"{{"timestamp":"{}","requestId":"{req}","message":{{"id":"{id}","model":"claude-opus-5-5","usage":{{"input_tokens":10,"output_tokens":{out},"cache_creation_input_tokens":100,"cache_read_input_tokens":1000}}}}}}"#,
+            r#"{{"timestamp":"{}","requestId":"{req}","message":{{"id":"{id}","model":"claude-opus-5-5","usage":{{"input_tokens":10,"output_tokens":{out},"cache_creation_input_tokens":100,"cache_creation":{{"ephemeral_5m_input_tokens":40,"ephemeral_1h_input_tokens":60}},"cache_read_input_tokens":1000}}}}}}"#,
             ts.to_rfc3339()
         )
     }
@@ -612,10 +617,9 @@ mod tests {
             // incomplete trailing line is held back until it is finished
             write!(f, "{}", &line("msg_c", "req_3", t, 1000)[..40]).unwrap();
         }
-        let cfg = Config::default();
         let mut store = Store::new(root.clone());
         store.scan();
-        let s = store.stats(&cfg);
+        let s = store.stats();
         assert_eq!(s.block.n, 2);
         assert_eq!(s.block.out, 120);
         assert_eq!(s.block.all, 2 * (10 + 100 + 1000) + 120);
@@ -625,8 +629,9 @@ mod tests {
         );
         assert_eq!(s.sessions.len(), 1);
         assert_eq!(s.sessions[0].proj, "C--dev-webapp");
-        // output 120 * $25/M + input 20 * $5/M + cache write 200 * $6.25/M + cache read 2000 * $0.5/M
-        let expected = (120.0 * 25.0 + 20.0 * 5.0 + 200.0 * 6.25 + 2000.0 * 0.5) / 1e6;
+        // Opus 5.5: output 120 * $20/M + input 20 * $4/M + 5m writes 80 * $5/M
+        // + 1h writes 120 * $8/M + cache reads 2000 * $0.20/M
+        let expected = (120.0 * 20.0 + 20.0 * 4.0 + 80.0 * 5.0 + 120.0 * 8.0 + 2000.0 * 0.2) / 1e6;
         assert!((s.block.cost - expected).abs() < 1e-12);
 
         // finish the partial line: the next scan picks it up exactly once
@@ -638,7 +643,7 @@ mod tests {
             writeln!(f, "{}", &line("msg_c", "req_3", t, 1000)[40..]).unwrap();
         }
         store.scan();
-        let s = store.stats(&cfg);
+        let s = store.stats();
         assert_eq!(s.block.n, 3);
         assert_eq!(s.block.out, 1120);
         let _ = std::fs::remove_dir_all(&root);
@@ -659,7 +664,7 @@ mod tests {
         drop(f);
         let mut store = Store::new(root.clone());
         store.scan();
-        let s = store.stats(&Config::default());
+        let s = store.stats();
         assert!(s.block_start.is_none());
         assert_eq!(s.block_frac, 0.0);
         let _ = std::fs::remove_dir_all(&root);

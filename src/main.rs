@@ -6,6 +6,7 @@
 
 mod config;
 mod draw;
+mod pricing;
 mod sys;
 mod ui;
 mod usage;
@@ -40,10 +41,13 @@ fn main() {
         // one instance per user session
         let _mutex = CreateMutexW(None, true, w!("Local\\ClaudeUsageWidget"));
         if GetLastError() == ERROR_ALREADY_EXISTS {
-            // already running: launching again opens its Settings window
+            // already running: launching again opens the drawer on Settings
             use windows::Win32::Foundation::{LPARAM, WPARAM};
-            use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW};
+            use windows::Win32::UI::WindowsAndMessaging::{
+                AllowSetForegroundWindow, FindWindowW, PostMessageW, ASFW_ANY,
+            };
             if let Ok(h) = FindWindowW(w!("ClaudeUsageReadout"), windows::core::PCWSTR::null()) {
+                let _ = AllowSetForegroundWindow(ASFW_ANY);
                 let _ = PostMessageW(h, ui::WM_OPEN_SETTINGS, WPARAM(0), LPARAM(0));
             }
             return;
