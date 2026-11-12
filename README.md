@@ -13,6 +13,11 @@ runtime to install.
 | Status | Tested | [Not tested on a real Mac](#macos-1) | [Not tested on a real Ubuntu machine](#ubuntu--linux) |
 
 <p align="center">
+  <a href="https://ko-fi.com/djlou"><img src="https://img.shields.io/badge/Ko--fi-Buy%20me%20a%20coffee-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white" alt="Support me on Ko-fi"></a>
+  <a href="https://sociabuzz.com/djlou/tribe"><img src="https://img.shields.io/badge/SociaBuzz-Send%20a%20tip-2DA44E?style=for-the-badge" alt="Send a tip on SociaBuzz"></a>
+</p>
+
+<p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/desktop-panel-dark.png">
     <img src="docs/desktop-panel-light.png" alt="Windows 11 desktop with the usage readout on the taskbar next to the weather button, and the detail panel open above it">
@@ -307,6 +312,15 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 ```
+
+## Support
+
+The widget is free. If it's useful to you, you can leave a tip:
+
+- [Ko-fi](https://ko-fi.com/djlou)
+- [SociaBuzz](https://sociabuzz.com/djlou/tribe)
+
+The same links are at the bottom of the widget's **Settings**.
 
 ## How it works
 

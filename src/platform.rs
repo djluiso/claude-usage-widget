@@ -149,6 +149,16 @@ pub fn set_autostart(on: bool) {
 }
 
 // ------------------------------------------------------------------ folders --
+/// Open a web page in the default browser.
+pub fn open_url(url: &str) {
+    #[cfg(windows)]
+    crate::sys::shell_open(url, None);
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg(url).spawn();
+    #[cfg(target_os = "linux")]
+    let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+}
+
 pub fn open_folder(p: &Path) {
     #[cfg(windows)]
     crate::sys::shell_open(&p.display().to_string(), None);

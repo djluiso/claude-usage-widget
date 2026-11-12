@@ -74,6 +74,7 @@ impl App {
             }
             Some(Hit::Refresh(ms)) => self.set_refresh(ms),
             Some(Hit::OpenTranscripts) => crate::platform::open_folder(&config::projects_dir()),
+            Some(Hit::Tip(url)) => crate::platform::open_url(url),
             Some(Hit::Quit) => self.handle_menu(M_QUIT),
             None => {}
         }

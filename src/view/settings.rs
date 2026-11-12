@@ -13,6 +13,8 @@ pub(crate) enum Hit {
     Startup,
     Refresh(u32),
     OpenTranscripts,
+    /// Open a tip/donation page in the browser.
+    Tip(&'static str),
     Quit,
 }
 
@@ -29,6 +31,10 @@ const GENERAL_H: f32 = 40.0 + GENERAL_ROWS as f32 * ROW_H;
 const PRICE_ROWS: [&str; 4] = ["fable-5-2", "opus-5-5", "sonnet-5-5", "haiku-5-5"];
 const PRICE_ROW_H: f32 = 26.0;
 const PRICES_H: f32 = 84.0 + PRICE_ROWS.len() as f32 * PRICE_ROW_H + 32.0;
+
+/// Where the "tip" links in Settings go.
+pub(crate) const TIP_KOFI: &str = "https://ko-fi.com/djlou";
+pub(crate) const TIP_SOCIABUZZ: &str = "https://sociabuzz.com/djlou/tribe";
 
 /// "$4.00", "$0.20", "$0.125"
 fn fmt_price(v: f64) -> String {
@@ -235,6 +241,22 @@ pub(crate) fn draw_settings(
     let tw = c.tw(label, 11.0, R);
     c.text(x + 4.0, ly, label, 11.0, th.accent, R, "lm");
     hits.push(([x, ly - 11.0, tw + 8.0, 22.0], Hit::OpenTranscripts));
+    // tip links, in the middle
+    let tips: [(&str, &str); 2] = [("Ko-fi", TIP_KOFI), ("SociaBuzz", TIP_SOCIABUZZ)];
+    let lead = "Enjoying it? Tip on";
+    let widths: Vec<f32> = tips.iter().map(|(l, _)| c.tw(l, 11.0, SB)).collect();
+    let total = c.tw(lead, 11.0, R) + 8.0 + widths.iter().sum::<f32>() + 18.0;
+    let mut tx = x + w / 2.0 - total / 2.0;
+    c.text(tx, ly, lead, 11.0, th.text3, R, "lm");
+    tx += c.tw(lead, 11.0, R) + 8.0;
+    for (i, ((label, url), lw)) in tips.iter().zip(widths).enumerate() {
+        if i > 0 {
+            c.text(tx - 9.0, ly, "·", 11.0, th.text3, R, "mm");
+        }
+        c.text(tx, ly, label, 11.0, th.accent, SB, "lm");
+        hits.push(([tx - 3.0, ly - 11.0, lw + 6.0, 22.0], Hit::Tip(url)));
+        tx += lw + 18.0;
+    }
     let label = "Quit widget";
     let tw = c.tw(label, 11.0, R);
     c.text(x + w - 4.0, ly, label, 11.0, th.text2, R, "rm");

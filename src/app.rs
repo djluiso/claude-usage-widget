@@ -145,6 +145,10 @@ impl App {
                 self.cfg.cfg.refresh_ms = ms;
                 self.cfg.save();
             }
+            Hit::Tip(url) => {
+                platform::open_url(url);
+                return Action::None;
+            }
             Hit::OpenTranscripts => {
                 platform::open_folder(&config::projects_dir());
                 return Action::None;
