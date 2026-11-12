@@ -1,0 +1,60 @@
+<!--
+  WiX v5 per-user MSI (no admin prompt).
+  Build:  wix build installer\widget.wxs -arch x64 -d Version=1.0.0 -o dist\ClaudeUsageWidget-1.0.0.msi
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Claude Usage Widget"
+           Manufacturer="djluiso"
+           Version="$(Version)"
+           UpgradeCode="3F1B8C52-7D4E-4A39-B6C0-91E2D7A4F5B8"
+           Scope="perUser"
+           Compressed="yes">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="AppIcon" SourceFile="$(sys.SOURCEFILEDIR)..\assets\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/djluiso/claude-usage-widget" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="LocalProgramsDir" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Claude Usage Widget" />
+      </Directory>
+    </StandardDirectory>
+
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Component Id="MainExe" Guid="B7E3A6D2-1C48-4F95-8E2A-5D0C9F6B3A17">
+        <File Id="WidgetExe" Source="$(sys.SOURCEFILEDIR)..\target\release\claude-usage-widget.exe" KeyPath="no" />
+        <RegistryValue Root="HKCU" Key="Software\ClaudeUsageWidget" Name="InstallDir" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+        <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+        <RemoveFolder Id="RemoveLocalPrograms" Directory="LocalProgramsDir" On="uninstall" />
+      </Component>
+      <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder">
+        <Shortcut Id="AppShortcut" Name="Claude Usage Widget" Target="[INSTALLFOLDER]claude-usage-widget.exe"
+                  WorkingDirectory="INSTALLFOLDER" Icon="AppIcon" />
+        <RegistryValue Root="HKCU" Key="Software\ClaudeUsageWidget" Name="Shortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="Claude Usage Widget">
+      <ComponentGroupRef Id="AppFiles" />
+    </Feature>
+
+    <!-- Stop a running copy before files are replaced or removed. -->
+    <CustomAction Id="StopWidget" Directory="INSTALLFOLDER" Execute="immediate" Return="ignore"
+                  ExeCommand="&quot;[SystemFolder]taskkill.exe&quot; /F /IM claude-usage-widget.exe" />
+    <!-- On full uninstall, drop the "Start with Windows" entry the app may have created. -->
+    <CustomAction Id="RemoveStartup" Directory="INSTALLFOLDER" Execute="immediate" Return="ignore"
+                  ExeCommand="&quot;[SystemFolder]reg.exe&quot; delete HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v ClaudeUsageWidget /f" />
+    <!-- Launch after install (interactive installs only). -->
+    <CustomAction Id="LaunchWidget" Directory="INSTALLFOLDER" Execute="immediate" Return="asyncNoWait"
+                  ExeCommand="&quot;[INSTALLFOLDER]claude-usage-widget.exe&quot;" />
+
+    <InstallExecuteSequence>
+      <Custom Action="StopWidget" Before="InstallValidate" />
+      <Custom Action="RemoveStartup" After="StopWidget" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="LaunchWidget" After="InstallFinalize" Condition="NOT Installed AND UILevel &gt;= 4" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>
