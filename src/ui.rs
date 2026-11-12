@@ -19,6 +19,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use Weight::{Regular as R, Semibold as SB};
 
 mod settings;
+mod shots;
 
 // ------------------------------------------------------------------ theme --
 struct Theme {
@@ -945,7 +946,7 @@ pub fn render_screenshots(dir: &std::path::Path) -> std::io::Result<()> {
             .save_png(dir.join(format!("panel-{name}.png")))
             .map_err(std::io::Error::other)?;
     }
-    Ok(())
+    shots::render_scenes(dir, &fonts, &s)
 }
 
 // --------------------------------------------------------- panel sections --

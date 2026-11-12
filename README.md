@@ -6,19 +6,12 @@ written in Rust, with no runtime to install.
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/readout-dark.png">
-    <img src="docs/readout-light.png" alt="Taskbar readout: ring gauge, tokens used in the 5-hour window, time left, and a sparkline" width="205">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/desktop-panel-dark.png">
+    <img src="docs/desktop-panel-light.png" alt="Windows 11 desktop with the usage readout on the taskbar next to the weather button, and the detail panel open above it">
   </picture>
 </p>
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/panel-dark.png">
-    <img src="docs/panel-light.png" alt="Detail panel: 5-hour window gauge, activity chart, stat tiles, 7-day history, token mix, models and recent sessions" width="808">
-  </picture>
-</p>
-
-<p align="center"><sub>Screenshots use sample data. They switch between the dark and light themes with your GitHub theme.</sub></p>
+<p align="center"><sub>Sample data on an illustrative desktop. Images follow your GitHub light/dark theme. <a href="#screenshots">More screenshots</a></sub></p>
 
 - **Taskbar readout:** sits next to the Widgets (weather) button, or by the tray.
   It shows three things:
@@ -34,6 +27,45 @@ written in Rust, with no runtime to install.
 
 All data comes from Claude Code's local transcripts (`~/.claude/projects/**/*.jsonl`,
 or `$CLAUDE_CONFIG_DIR/projects`). Nothing is sent anywhere.
+
+## Screenshots
+
+All screenshots use sample data and follow your GitHub light/dark theme.
+
+**On the taskbar.** The readout sits next to the Widgets (weather) button,
+using the same glass as the taskbar.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/taskbar-dark.png">
+  <img src="docs/taskbar-light.png" alt="Windows 11 taskbar with the usage readout next to the weather button">
+</picture>
+
+**Readout close-up.** The ring shows how much of the 5-hour window has passed,
+next to the tokens used, the time left, and output over the last hour.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readout-dark.png">
+  <img src="docs/readout-light.png" alt="Taskbar readout: ring gauge, tokens used in the 5-hour window, time left, and a sparkline" width="205">
+</picture>
+
+**Detail panel.** Click the readout and this panel slides in from the screen
+edge.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/panel-dark.png">
+    <img src="docs/panel-light.png" alt="Detail panel: 5-hour window gauge, activity chart, stat tiles, 7-day history, token mix, models and recent sessions" width="808">
+  </picture>
+</p>
+
+**Settings.** Right-click the readout and choose **Settings…**.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/settings-dark.png">
+    <img src="docs/settings-light.png" alt="Settings window: theme, position, start with Windows, refresh interval and an editable price table" width="616">
+  </picture>
+</p>
 
 ## Install
 

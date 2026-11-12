@@ -13,7 +13,7 @@ const STYLE: WINDOW_STYLE =
     WINDOW_STYLE(WS_OVERLAPPED.0 | WS_CAPTION.0 | WS_SYSMENU.0 | WS_MINIMIZEBOX.0);
 
 #[derive(Clone, PartialEq)]
-enum Hit {
+pub(super) enum Hit {
     Theme(&'static str),
     Dock(&'static str),
     Startup,
@@ -146,8 +146,7 @@ impl App {
     }
 
     fn settings_height(&self) -> f32 {
-        let rows = self.cfg.cfg.prices.len() as f32;
-        84.0 + 288.0 + 16.0 + (88.0 + rows * 38.0 + 52.0) + 16.0 + 40.0
+        settings_height_for(&self.cfg.cfg)
     }
 
     /// Size the window so its client area matches the content (and centre it).
@@ -219,7 +218,6 @@ impl App {
     // ----------------------------------------------------------- drawing --
     fn paint_settings(&mut self, hwnd: HWND) {
         self.fit_settings_window(false);
-        let h = self.settings_height();
         let th = self.theme;
         let startup = sys::startup_enabled();
         let cfg = self.cfg.cfg.clone();
@@ -227,222 +225,14 @@ impl App {
             return;
         };
         let k = s.k;
-        let mut c = Canvas::new(SW, h, k, &self.fonts);
-        let mut hits: Vec<([f32; 4], Hit)> = Vec::new();
-        let light = is_light(th);
-        let bg = if light {
-            [243, 243, 243, 255]
-        } else {
-            [32, 32, 32, 255]
-        };
-        let field_bg = if light {
-            [255, 255, 255, 255]
-        } else {
-            [255, 255, 255, 14]
-        };
-        c.rect(0.0, 0.0, SW, h, bg, 0.0);
-
-        // header
-        c.spark(32.0, 40.0, 11.0, th.accent);
-        c.text(54.0, 22.0, "Settings", 20.0, th.text1, SB, "la");
-        c.text(
-            54.0,
-            52.0,
-            "Changes are saved automatically",
-            11.0,
-            th.text3,
-            R,
-            "la",
-        );
-
-        // ---- General
-        let (x, w) = (20.0, SW - 40.0);
-        let mut y = 84.0;
-        c.card(x, y, w, 288.0, th.card, th.card_border, 8.0);
-        c.text(x + 16.0, y + 14.0, "General", 12.0, th.text1, SB, "la");
-        let rows: [(&str, &str); 4] = [
-            ("Theme", "Panel colours. System follows Windows' app mode."),
-            ("Position", "Where the readout sits on the taskbar"),
-            (
-                "Start with Windows",
-                "Launch automatically when you sign in",
-            ),
-            ("Refresh every", "How often transcripts are rescanned"),
-        ];
-        for (i, (label, desc)) in rows.iter().enumerate() {
-            let ry = y + 40.0 + i as f32 * 60.0;
-            if i > 0 {
-                c.line(x + 16.0, ry, x + w - 16.0, ry, th.grid, 1.0);
-            }
-            c.text(x + 16.0, ry + 13.0, label, 12.0, th.text1, R, "la");
-            c.text(x + 16.0, ry + 32.0, desc, 10.0, th.text3, R, "la");
-            let (right, cy) = (x + w - 16.0, ry + 30.0);
-            match i {
-                0 => {
-                    let sel = match cfg.theme.as_str() {
-                        "dark" => 1,
-                        "light" => 2,
-                        _ => 0,
-                    };
-                    segmented(
-                        &mut c,
-                        th,
-                        &mut hits,
-                        right,
-                        cy,
-                        &[
-                            ("System", Hit::Theme("system")),
-                            ("Dark", Hit::Theme("dark")),
-                            ("Light", Hit::Theme("light")),
-                        ],
-                        sel,
-                    );
-                }
-                1 => {
-                    let sel = usize::from(cfg.dock == "right");
-                    segmented(
-                        &mut c,
-                        th,
-                        &mut hits,
-                        right,
-                        cy,
-                        &[
-                            ("Widgets button", Hit::Dock("left")),
-                            ("Tray icons", Hit::Dock("right")),
-                        ],
-                        sel,
-                    );
-                }
-                2 => toggle(&mut c, th, &mut hits, right, cy, startup),
-                _ => {
-                    let opts = [1000u32, 3000, 5000, 10000];
-                    let sel = opts
-                        .iter()
-                        .position(|v| *v == cfg.refresh_ms)
-                        .unwrap_or(usize::MAX);
-                    segmented(
-                        &mut c,
-                        th,
-                        &mut hits,
-                        right,
-                        cy,
-                        &[
-                            ("1 s", Hit::Refresh(1000)),
-                            ("3 s", Hit::Refresh(3000)),
-                            ("5 s", Hit::Refresh(5000)),
-                            ("10 s", Hit::Refresh(10000)),
-                        ],
-                        sel,
-                    );
-                }
-            }
-        }
-
-        // ---- Prices
-        y += 288.0 + 16.0;
-        let n = cfg.prices.len() as f32;
-        let ph = 88.0 + n * 38.0 + 52.0;
-        c.card(x, y, w, ph, th.card, th.card_border, 8.0);
-        c.text(x + 16.0, y + 14.0, "Prices", 12.0, th.text1, SB, "la");
-        c.text(
-            x + w - 16.0,
-            y + 15.0,
-            "USD per million tokens",
-            11.0,
-            th.text3,
-            R,
-            "ra",
-        );
-        c.text(
-            x + 16.0,
-            y + 36.0,
-            "Used for the $ estimates. Matched against the model name.",
-            10.0,
-            th.text3,
-            R,
-            "la",
-        );
-        let (fw, fg) = (82.0, 10.0);
-        let col = |j: usize| x + w - 16.0 - fw - (3 - j) as f32 * (fw + fg);
-        let hy = y + 64.0;
-        c.text(x + 16.0, hy, "Model", 10.0, th.text3, SB, "la");
-        for (j, name) in ["Input", "Output", "Cache write", "Cache read"]
-            .iter()
-            .enumerate()
-        {
-            c.text(col(j) + fw - 8.0, hy, name, 10.0, th.text3, SB, "ra");
-        }
-        for (i, (model, p)) in cfg.prices.iter().enumerate() {
-            let ry = y + 86.0 + i as f32 * 38.0;
-            c.text(x + 16.0, ry + 15.0, model, 12.0, th.text1, R, "lm");
-            #[allow(clippy::needless_range_loop)]
-            // j picks the column, the value and the hit target
-            for j in 0..4 {
-                let fx = col(j);
-                let focused = s
-                    .focus
-                    .as_ref()
-                    .is_some_and(|(m, jj)| m == model && *jj == j);
-                c.rect(fx, ry, fw, 30.0, field_bg, 4.0);
-                let border = if focused { th.accent } else { th.card_border };
-                c.card(fx, ry, fw, 30.0, [0, 0, 0, 0], border, 4.0);
-                if focused {
-                    c.rect(fx + 1.0, ry + 28.0, fw - 2.0, 2.0, th.accent, 1.0);
-                }
-                let text = if focused {
-                    s.buf.clone()
-                } else {
-                    fmt_price(p[j])
-                };
-                if focused && s.fresh && !text.is_empty() {
-                    let tw = c.tw(&text, 12.0, R);
-                    let sel = [th.accent[0], th.accent[1], th.accent[2], 90];
-                    c.rect(fx + fw - 12.0 - tw, ry + 6.0, tw + 4.0, 18.0, sel, 2.0);
-                }
-                c.text(fx + fw - 10.0, ry + 15.0, &text, 12.0, th.text1, R, "rm");
-                if focused && s.caret && !s.fresh {
-                    c.line(
-                        fx + fw - 9.0,
-                        ry + 8.0,
-                        fx + fw - 9.0,
-                        ry + 22.0,
-                        th.accent,
-                        1.0,
-                    );
-                }
-                hits.push(([fx, ry, fw, 30.0], Hit::Price(model.clone(), j)));
-            }
-        }
-        let by = y + ph - 46.0;
-        let label = "Reset to defaults";
-        let bw = c.tw(label, 11.0, R) + 28.0;
-        let bx = x + w - 16.0 - bw;
-        c.card(bx, by, bw, 30.0, field_bg, th.card_border, 4.0);
-        c.text(bx + bw / 2.0, by + 15.0, label, 11.0, th.text1, R, "mm");
-        hits.push(([bx, by, bw, 30.0], Hit::Reset));
-        c.text(
-            x + 16.0,
-            by + 15.0,
-            "Tab: next field · Enter: save · Esc: cancel",
-            10.0,
-            th.text3,
-            R,
-            "lm",
-        );
-
-        // ---- links
-        let ly = y + ph + 20.0;
-        let mut lx = x + 4.0;
-        for (label, hit) in [
-            ("Open config file", Hit::OpenConfig),
-            ("Open transcripts folder", Hit::OpenTranscripts),
-        ] {
-            let tw = c.tw(label, 11.0, R);
-            c.text(lx, ly, label, 11.0, th.accent, R, "la");
-            hits.push(([lx - 4.0, ly - 4.0, tw + 8.0, 22.0], hit));
-            lx += tw + 24.0;
-        }
-
+        let edit = s.focus.as_ref().map(|(m, j)| FieldEdit {
+            model: m,
+            j: *j,
+            buf: &s.buf,
+            fresh: s.fresh,
+            caret: s.caret,
+        });
+        let (c, hits) = draw_settings(&self.fonts, th, &cfg, startup, k, edit);
         s.hits = hits;
         // blit
         let (pw, phh) = (c.pm.width() as i32, c.pm.height() as i32);
@@ -616,6 +406,246 @@ impl App {
         self.settings_invalidate();
         true
     }
+}
+
+/// The price field being edited (for drawing).
+pub(super) struct FieldEdit<'b> {
+    pub model: &'b str,
+    pub j: usize,
+    pub buf: &'b str,
+    pub fresh: bool,
+    pub caret: bool,
+}
+
+pub(super) fn settings_height_for(cfg: &crate::config::Config) -> f32 {
+    let rows = cfg.prices.len() as f32;
+    84.0 + 288.0 + 16.0 + (88.0 + rows * 38.0 + 52.0) + 16.0 + 40.0
+}
+
+/// Draw the settings client area; also returns the clickable regions.
+pub(super) fn draw_settings<'a>(
+    fonts: &'a Fonts,
+    th: &Theme,
+    cfg: &crate::config::Config,
+    startup: bool,
+    k: f32,
+    edit: Option<FieldEdit>,
+) -> (Canvas<'a>, Vec<([f32; 4], Hit)>) {
+    let h = settings_height_for(cfg);
+    let mut c = Canvas::new(SW, h, k, fonts);
+    let mut hits: Vec<([f32; 4], Hit)> = Vec::new();
+    let light = is_light(th);
+    let bg = if light {
+        [243, 243, 243, 255]
+    } else {
+        [32, 32, 32, 255]
+    };
+    let field_bg = if light {
+        [255, 255, 255, 255]
+    } else {
+        [255, 255, 255, 14]
+    };
+    c.rect(0.0, 0.0, SW, h, bg, 0.0);
+
+    // header
+    c.spark(32.0, 40.0, 11.0, th.accent);
+    c.text(54.0, 22.0, "Settings", 20.0, th.text1, SB, "la");
+    c.text(
+        54.0,
+        52.0,
+        "Changes are saved automatically",
+        11.0,
+        th.text3,
+        R,
+        "la",
+    );
+
+    // ---- General
+    let (x, w) = (20.0, SW - 40.0);
+    let mut y = 84.0;
+    c.card(x, y, w, 288.0, th.card, th.card_border, 8.0);
+    c.text(x + 16.0, y + 14.0, "General", 12.0, th.text1, SB, "la");
+    let rows: [(&str, &str); 4] = [
+        ("Theme", "Panel colours. System follows Windows' app mode."),
+        ("Position", "Where the readout sits on the taskbar"),
+        (
+            "Start with Windows",
+            "Launch automatically when you sign in",
+        ),
+        ("Refresh every", "How often transcripts are rescanned"),
+    ];
+    for (i, (label, desc)) in rows.iter().enumerate() {
+        let ry = y + 40.0 + i as f32 * 60.0;
+        if i > 0 {
+            c.line(x + 16.0, ry, x + w - 16.0, ry, th.grid, 1.0);
+        }
+        c.text(x + 16.0, ry + 13.0, label, 12.0, th.text1, R, "la");
+        c.text(x + 16.0, ry + 32.0, desc, 10.0, th.text3, R, "la");
+        let (right, cy) = (x + w - 16.0, ry + 30.0);
+        match i {
+            0 => {
+                let sel = match cfg.theme.as_str() {
+                    "dark" => 1,
+                    "light" => 2,
+                    _ => 0,
+                };
+                segmented(
+                    &mut c,
+                    th,
+                    &mut hits,
+                    right,
+                    cy,
+                    &[
+                        ("System", Hit::Theme("system")),
+                        ("Dark", Hit::Theme("dark")),
+                        ("Light", Hit::Theme("light")),
+                    ],
+                    sel,
+                );
+            }
+            1 => {
+                let sel = usize::from(cfg.dock == "right");
+                segmented(
+                    &mut c,
+                    th,
+                    &mut hits,
+                    right,
+                    cy,
+                    &[
+                        ("Widgets button", Hit::Dock("left")),
+                        ("Tray icons", Hit::Dock("right")),
+                    ],
+                    sel,
+                );
+            }
+            2 => toggle(&mut c, th, &mut hits, right, cy, startup),
+            _ => {
+                let opts = [1000u32, 3000, 5000, 10000];
+                let sel = opts
+                    .iter()
+                    .position(|v| *v == cfg.refresh_ms)
+                    .unwrap_or(usize::MAX);
+                segmented(
+                    &mut c,
+                    th,
+                    &mut hits,
+                    right,
+                    cy,
+                    &[
+                        ("1 s", Hit::Refresh(1000)),
+                        ("3 s", Hit::Refresh(3000)),
+                        ("5 s", Hit::Refresh(5000)),
+                        ("10 s", Hit::Refresh(10000)),
+                    ],
+                    sel,
+                );
+            }
+        }
+    }
+
+    // ---- Prices
+    y += 288.0 + 16.0;
+    let n = cfg.prices.len() as f32;
+    let ph = 88.0 + n * 38.0 + 52.0;
+    c.card(x, y, w, ph, th.card, th.card_border, 8.0);
+    c.text(x + 16.0, y + 14.0, "Prices", 12.0, th.text1, SB, "la");
+    c.text(
+        x + w - 16.0,
+        y + 15.0,
+        "USD per million tokens",
+        11.0,
+        th.text3,
+        R,
+        "ra",
+    );
+    c.text(
+        x + 16.0,
+        y + 36.0,
+        "Used for the $ estimates. Matched against the model name.",
+        10.0,
+        th.text3,
+        R,
+        "la",
+    );
+    let (fw, fg) = (82.0, 10.0);
+    let col = |j: usize| x + w - 16.0 - fw - (3 - j) as f32 * (fw + fg);
+    let hy = y + 64.0;
+    c.text(x + 16.0, hy, "Model", 10.0, th.text3, SB, "la");
+    for (j, name) in ["Input", "Output", "Cache write", "Cache read"]
+        .iter()
+        .enumerate()
+    {
+        c.text(col(j) + fw - 8.0, hy, name, 10.0, th.text3, SB, "ra");
+    }
+    for (i, (model, p)) in cfg.prices.iter().enumerate() {
+        let ry = y + 86.0 + i as f32 * 38.0;
+        c.text(x + 16.0, ry + 15.0, model, 12.0, th.text1, R, "lm");
+        #[allow(clippy::needless_range_loop)]
+        // j picks the column, the value and the hit target
+        for j in 0..4 {
+            let fx = col(j);
+            let field = edit.as_ref().filter(|e| e.model == model && e.j == j);
+            let focused = field.is_some();
+            c.rect(fx, ry, fw, 30.0, field_bg, 4.0);
+            let border = if focused { th.accent } else { th.card_border };
+            c.card(fx, ry, fw, 30.0, [0, 0, 0, 0], border, 4.0);
+            if focused {
+                c.rect(fx + 1.0, ry + 28.0, fw - 2.0, 2.0, th.accent, 1.0);
+            }
+            let text = match field {
+                Some(e) => e.buf.to_string(),
+                None => fmt_price(p[j]),
+            };
+            if field.is_some_and(|e| e.fresh) && !text.is_empty() {
+                let tw = c.tw(&text, 12.0, R);
+                let sel = [th.accent[0], th.accent[1], th.accent[2], 90];
+                c.rect(fx + fw - 12.0 - tw, ry + 6.0, tw + 4.0, 18.0, sel, 2.0);
+            }
+            c.text(fx + fw - 10.0, ry + 15.0, &text, 12.0, th.text1, R, "rm");
+            if field.is_some_and(|e| e.caret && !e.fresh) {
+                c.line(
+                    fx + fw - 9.0,
+                    ry + 8.0,
+                    fx + fw - 9.0,
+                    ry + 22.0,
+                    th.accent,
+                    1.0,
+                );
+            }
+            hits.push(([fx, ry, fw, 30.0], Hit::Price(model.clone(), j)));
+        }
+    }
+    let by = y + ph - 46.0;
+    let label = "Reset to defaults";
+    let bw = c.tw(label, 11.0, R) + 28.0;
+    let bx = x + w - 16.0 - bw;
+    c.card(bx, by, bw, 30.0, field_bg, th.card_border, 4.0);
+    c.text(bx + bw / 2.0, by + 15.0, label, 11.0, th.text1, R, "mm");
+    hits.push(([bx, by, bw, 30.0], Hit::Reset));
+    c.text(
+        x + 16.0,
+        by + 15.0,
+        "Tab: next field · Enter: save · Esc: cancel",
+        10.0,
+        th.text3,
+        R,
+        "lm",
+    );
+
+    // ---- links
+    let ly = y + ph + 20.0;
+    let mut lx = x + 4.0;
+    for (label, hit) in [
+        ("Open config file", Hit::OpenConfig),
+        ("Open transcripts folder", Hit::OpenTranscripts),
+    ] {
+        let tw = c.tw(label, 11.0, R);
+        c.text(lx, ly, label, 11.0, th.accent, R, "la");
+        hits.push(([lx - 4.0, ly - 4.0, tw + 8.0, 22.0], hit));
+        lx += tw + 24.0;
+    }
+
+    (c, hits)
 }
 
 // ------------------------------------------------------------ controls -----
