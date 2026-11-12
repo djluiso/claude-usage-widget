@@ -386,3 +386,20 @@ The same links are at the bottom of the widget's **Settings**.
   both windows are shown through `UpdateLayeredWindow` with per-pixel alpha,
   so the translucent taskbar glass shows through. The panel's glass effect is
   a blurred snapshot of the screen behind it, taken when it opens.
+
+## License
+
+Copyright (C) 2026 djluiso
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See [LICENSE](LICENSE) for the full text.
+
+In short: you're free to use, study, share and change it. If you share a
+modified version, it has to stay open source under the same license, with the
+original copyright kept.
+
+The bundled [Inter](https://rsms.me/inter/) font is under the SIL Open Font
+License ([assets/fonts/OFL.txt](assets/fonts/OFL.txt)).
+

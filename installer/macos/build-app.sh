@@ -30,6 +30,7 @@ iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/icon.icns"
 
 codesign --force --deep --sign - "$APP"
 
+cp LICENSE "$APP/Contents/Resources/LICENSE"
 ln -s /Applications "$ROOT/Applications"
 mkdir -p dist
 hdiutil create -volname "Claude Usage Widget" -srcfolder "$ROOT" -ov -format UDZO \

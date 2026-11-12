@@ -166,7 +166,7 @@ jobs:
       - name: Portable zip
         shell: pwsh
         run: |
-          Compress-Archive -Path target\release\claude-usage-widget.exe, README.md `
+          Compress-Archive -Path target\release\claude-usage-widget.exe, README.md, LICENSE `
             -DestinationPath "dist\ClaudeUsageWidget-${{ needs.version.outputs.version }}-portable.zip"
 
       - uses: actions/upload-artifact@v4
@@ -214,7 +214,7 @@ jobs:
           t="claude-usage-widget-$v-linux-x86_64"
           mkdir -p "$t"
           cp target/release/claude-usage-widget installer/linux/claude-usage-widget.desktop \
-             assets/icon.png README.md "$t/"
+             assets/icon.png README.md LICENSE "$t/"
           tar czf "dist/$t.tar.gz" "$t"
 
       - uses: actions/upload-artifact@v4

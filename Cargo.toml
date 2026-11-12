@@ -4,6 +4,7 @@ version = "1.6.0"
 edition = "2021"
 description = "Claude Code usage in real time: Windows taskbar, macOS menu bar, Linux tray"
 repository = "https://github.com/djluiso/claude-usage-widget"
+license = "GPL-3.0-or-later"
 publish = false
 
 [dependencies]
@@ -56,6 +57,7 @@ winresource = "0.1"
 name = "claude-usage-widget"
 maintainer = "djluiso <djluiso@users.noreply.github.com>"
 section = "utils"
+license-file = ["LICENSE", "0"]
 priority = "optional"
 depends = "$auto"
 extended-description = """Shows Claude Code usage (tokens, the 5-hour window, cost estimates) in the system tray, with a detail drawer. Reads Claude Code's local transcripts; nothing leaves the machine."""
