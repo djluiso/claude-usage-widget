@@ -59,15 +59,18 @@ Requires Windows 11 (x64).
   - **Theme:** System, Dark or Light
   - **Start with Windows**
   - open the transcripts folder
-  - edit settings
+  - **Settings…**
   - quit
+- Launching the app again (for example from the Start Menu) while it's running
+  opens **Settings**.
 
 ## Start with Windows
 
 You can turn this on in two ways:
 
 - In the setup wizard, tick **Start with Windows**.
-- In the widget, right-click the readout and check **Start with Windows**.
+- In the widget, right-click the readout and check **Start with Windows**, or
+  use the toggle in **Settings**.
 
 Both add a `ClaudeUsageWidget` value under
 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. To turn it off, uncheck
@@ -76,7 +79,7 @@ removes the entry.
 
 ## Themes
 
-Pick a theme from the right-click menu under **Theme**:
+Pick a theme in **Settings** or from the right-click menu under **Theme**:
 
 | Option | Panel |
 |---|---|
@@ -89,8 +92,19 @@ stays readable whatever the panel theme is.
 
 ## Settings
 
-Settings live in `%LOCALAPPDATA%\ClaudeUsageWidget\config.json`. The file is
-created on first run, and changes are picked up automatically.
+Open the Settings window from the right-click menu (**Settings…**). Changes
+are saved as you make them. It has two sections:
+
+- **General:** theme, position (next to the Widgets button or the tray icons),
+  **Start with Windows**, and the refresh interval (1, 3, 5 or 10 seconds).
+- **Prices:** an editable table of USD per million tokens for each model. Click
+  a value and type over it. **Tab** moves to the next field, **Enter** saves,
+  and **Esc** cancels. **Reset to defaults** restores the built-in prices.
+
+Everything is stored in `%LOCALAPPDATA%\ClaudeUsageWidget\config.json`. The
+file is created on first run, and hand edits are picked up automatically.
+Adding a model there (for example `"opus-4"`) gives it its own row in the price
+table.
 
 ```json
 {

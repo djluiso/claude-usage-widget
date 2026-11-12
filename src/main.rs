@@ -36,6 +36,12 @@ fn main() {
         // one instance per user session
         let _mutex = CreateMutexW(None, true, w!("Local\\ClaudeUsageWidget"));
         if GetLastError() == ERROR_ALREADY_EXISTS {
+            // already running: launching again opens its Settings window
+            use windows::Win32::Foundation::{LPARAM, WPARAM};
+            use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW};
+            if let Ok(h) = FindWindowW(w!("ClaudeUsageReadout"), windows::core::PCWSTR::null()) {
+                let _ = PostMessageW(h, ui::WM_OPEN_SETTINGS, WPARAM(0), LPARAM(0));
+            }
             return;
         }
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);

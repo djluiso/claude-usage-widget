@@ -16,6 +16,8 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 use Weight::{Regular as R, Semibold as SB};
 
+mod settings;
+
 // ------------------------------------------------------------------ theme --
 struct Theme {
     panel: Rgba,
@@ -118,6 +120,8 @@ const CLS_PANEL: PCWSTR = w!("ClaudeUsagePanel");
 const OWN_CLASSES: [&str; 2] = ["ClaudeUsageReadout", "ClaudeUsagePanel"];
 
 const WM_MOUSELEAVE: u32 = 0x02A3;
+/// Posted by a second launch of the exe: open the Settings window.
+pub const WM_OPEN_SETTINGS: u32 = WM_APP + 1;
 
 const T_TICK: usize = 1;
 const T_GUARD: usize = 2;
@@ -167,6 +171,7 @@ struct App {
     backdrop: Option<Pixmap>,
     anim: Option<Anim>,
     closed_at: Option<Instant>,
+    settings: Option<settings::SettingsUi>,
 }
 
 thread_local! {
@@ -211,6 +216,7 @@ pub fn run() {
             };
             RegisterClassExW(&wc);
         }
+        settings::register(hinst);
         let owner = sys::taskbar().unwrap_or_default();
         let readout = CreateWindowExW(
             WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
@@ -266,12 +272,16 @@ pub fn run() {
             backdrop: None,
             anim: None,
             closed_at: None,
+            settings: None,
         };
         APP.with(|a| *a.borrow_mut() = Some(app));
         with_app(|a| a.tick());
         let _ = ShowWindow(readout, SW_SHOWNOACTIVATE);
         SetTimer(readout, T_TICK, refresh, None);
         SetTimer(readout, T_GUARD, 700, None);
+        if std::env::args().any(|a| a == "--settings") {
+            let _ = PostMessageW(readout, WM_OPEN_SETTINGS, WPARAM(0), LPARAM(0));
+        }
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
@@ -288,7 +298,11 @@ impl App {
             self.locator.invalidate();
         }
         // pick up Windows light/dark switches live
-        self.theme = resolve_theme(&self.cfg.cfg.theme);
+        let theme = resolve_theme(&self.cfg.cfg.theme);
+        if !std::ptr::eq(theme, self.theme) {
+            self.theme = theme;
+            self.settings_theme_changed();
+        }
         self.bar_theme = taskbar_theme();
         self.store.scan();
         self.stats = Some(self.store.stats(&self.cfg.cfg));
@@ -479,34 +493,17 @@ impl App {
     fn handle_menu(&mut self, cmd: usize) {
         match cmd {
             M_SHOW => self.toggle_panel(),
-            M_THEME_SYSTEM | M_THEME_DARK | M_THEME_LIGHT => {
-                self.cfg.cfg.theme = match cmd {
-                    M_THEME_DARK => "dark",
-                    M_THEME_LIGHT => "light",
-                    _ => "system",
-                }
-                .into();
-                self.cfg.save();
-                self.theme = resolve_theme(&self.cfg.cfg.theme);
-                self.render_readout();
-                if self.panel_open && self.anim.is_none() {
-                    self.render_panel();
-                    let (w, h) = self.panel_size;
-                    sys::layered_show(self.panel, &self.panel_bgra, w, h, self.panel_x, self.panel_y, 255);
-                }
+            M_THEME_SYSTEM => self.set_theme("system"),
+            M_THEME_DARK => self.set_theme("dark"),
+            M_THEME_LIGHT => self.set_theme("light"),
+            M_DOCK_LEFT => self.set_dock("left"),
+            M_DOCK_RIGHT => self.set_dock("right"),
+            M_STARTUP => {
+                sys::set_startup(!sys::startup_enabled());
+                self.settings_invalidate();
             }
-            M_DOCK_LEFT | M_DOCK_RIGHT => {
-                self.cfg.cfg.dock = if cmd == M_DOCK_LEFT { "left" } else { "right" }.into();
-                self.cfg.save();
-                self.locator.invalidate();
-                self.render_readout();
-            }
-            M_STARTUP => sys::set_startup(!sys::startup_enabled()),
             M_TRANSCRIPTS => sys::shell_open(&config::projects_dir().display().to_string(), None),
-            M_SETTINGS => {
-                let p = format!("\"{}\"", config::config_path().display());
-                sys::shell_open("notepad.exe", Some(&p));
-            }
+            M_SETTINGS => self.open_settings(),
             M_QUIT => unsafe {
                 let _ = DestroyWindow(self.panel);
                 let _ = DestroyWindow(self.readout);
@@ -546,7 +543,7 @@ fn show_menu(owner: HWND) {
         let _ = AppendMenuW(m, MF_STRING | chk(startup), M_STARTUP, w!("Start with Windows"));
         let _ = AppendMenuW(m, MF_SEPARATOR, 0, PCWSTR::null());
         let _ = AppendMenuW(m, MF_STRING, M_TRANSCRIPTS, w!("Open transcripts folder"));
-        let _ = AppendMenuW(m, MF_STRING, M_SETTINGS, w!("Edit settings && prices…"));
+        let _ = AppendMenuW(m, MF_STRING, M_SETTINGS, w!("Settings…"));
         let _ = AppendMenuW(m, MF_SEPARATOR, 0, PCWSTR::null());
         let _ = AppendMenuW(m, MF_STRING, M_QUIT, w!("Quit"));
         let mut pt = POINT::default();
@@ -604,6 +601,10 @@ unsafe extern "system" fn readout_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPA
         }
         WM_RBUTTONUP => {
             show_menu(hwnd);
+            LRESULT(0)
+        }
+        WM_OPEN_SETTINGS => {
+            with_app(|a| a.open_settings());
             LRESULT(0)
         }
         WM_DESTROY => LRESULT(0),
