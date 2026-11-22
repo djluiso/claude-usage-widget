@@ -339,7 +339,10 @@ mod renew {
         if o["expiresAt"].as_i64().unwrap_or(i64::MAX) > now + RENEW_BEFORE_MS {
             return o["accessToken"].as_str().map(str::to_string);
         }
-        let refresh = o["refreshToken"].as_str().filter(|t| !t.is_empty())?.to_string();
+        let refresh = o["refreshToken"]
+            .as_str()
+            .filter(|t| !t.is_empty())?
+            .to_string();
         if DEAD.lock().ok()?.as_deref() == Some(refresh.as_str()) {
             return None;
         }
@@ -376,10 +379,14 @@ mod renew {
             if attempt > 0 {
                 std::thread::sleep(Duration::from_millis(250 * attempt));
             }
-            let Some(mut latest) = read(&file) else { continue };
+            let Some(mut latest) = read(&file) else {
+                continue;
+            };
             if latest["claudeAiOauth"]["refreshToken"].as_str() != Some(refresh.as_str()) {
                 // Someone signed in again meanwhile: keep theirs.
-                return latest["claudeAiOauth"]["accessToken"].as_str().map(str::to_string);
+                return latest["claudeAiOauth"]["accessToken"]
+                    .as_str()
+                    .map(str::to_string);
             }
             let access = apply(&mut latest, &reply, now)?;
             match write(&file, &latest) {
@@ -398,7 +405,11 @@ mod renew {
             .append(true)
             .open(crate::config::log_path())
         {
-            let _ = writeln!(f, "[{}] {msg}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S"));
+            let _ = writeln!(
+                f,
+                "[{}] {msg}",
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+            );
         }
     }
 
@@ -630,7 +641,10 @@ mod tests {
                 "refresh_token_expires_in":100,"scope":"user:inference user:profile"}"#,
         )
         .unwrap();
-        assert_eq!(renew::apply(&mut creds, &reply, 1_000).as_deref(), Some("new"));
+        assert_eq!(
+            renew::apply(&mut creds, &reply, 1_000).as_deref(),
+            Some("new")
+        );
         let o = &creds["claudeAiOauth"];
         assert_eq!(o["accessToken"], "new");
         assert_eq!(o["refreshToken"], "r2");
@@ -647,8 +661,7 @@ mod tests {
         let mut creds: Value =
             serde_json::from_str(r#"{"claudeAiOauth":{"accessToken":"a","refreshToken":"r1"}}"#)
                 .unwrap();
-        let reply: Value =
-            serde_json::from_str(r#"{"access_token":"b","expires_in":10}"#).unwrap();
+        let reply: Value = serde_json::from_str(r#"{"access_token":"b","expires_in":10}"#).unwrap();
         renew::apply(&mut creds, &reply, 0).unwrap();
         assert_eq!(creds["claudeAiOauth"]["refreshToken"], "r1");
     }

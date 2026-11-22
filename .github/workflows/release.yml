@@ -32,7 +32,7 @@ jobs:
         os: [windows-latest, macos-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Linux build dependencies
         if: runner.os == 'Linux'
@@ -62,7 +62,7 @@ jobs:
         os: [macos-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Linux build and display dependencies
         if: runner.os == 'Linux'
@@ -123,7 +123,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Is this version already released?
         id: v
         run: |
@@ -142,7 +142,7 @@ jobs:
     if: needs.version.outputs.release == 'true'
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
@@ -179,7 +179,7 @@ jobs:
     if: needs.version.outputs.release == 'true'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
@@ -198,7 +198,7 @@ jobs:
     if: needs.version.outputs.release == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2

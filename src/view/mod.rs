@@ -224,7 +224,10 @@ pub(crate) fn panel_layout(s: &Stats) -> (f32, usize, usize, [f32; 4], [f32; 5])
     let status_h = status_height(s);
     // one session row fewer when the status card is shown, to keep the
     // drawer about the same height
-    let ns = s.sessions.len().clamp(1, if status_h > 0.0 { 3 } else { 4 });
+    let ns = s
+        .sessions
+        .len()
+        .clamp(1, if status_h > 0.0 { 3 } else { 4 });
     let left = [160.0, 156.0, 2.0 * 82.0 + 12.0, LIMITS_H];
     let right = [
         164.0,
@@ -305,7 +308,10 @@ pub(crate) fn draw_panel<'a>(
     if right_h[4] > 0.0 {
         y += right_h[3] + gap;
         service_status(&mut c, th, s, x, y, cw, right_h[4]);
-        hits.push(([x, y, cw, right_h[4]], settings::Hit::Tip(crate::status::PAGE)));
+        hits.push((
+            [x, y, cw, right_h[4]],
+            settings::Hit::Tip(crate::status::PAGE),
+        ));
     }
     c.text(
         pad,
@@ -634,7 +640,14 @@ fn service_status(c: &mut Canvas, th: &Theme, s: &Stats, x: f32, y: f32, w: f32,
             format!("{}: ", inc.stage)
         };
         let t = c.fit(&format!("{stage}{}", inc.name), 10.5, R, w - 44.0);
-        c.rect(x + 16.0, iy - 5.0, 3.0, 10.0, level_color(th, inc.impact), 1.5);
+        c.rect(
+            x + 16.0,
+            iy - 5.0,
+            3.0,
+            10.0,
+            level_color(th, inc.impact),
+            1.5,
+        );
         c.text(x + 26.0, iy, &t, 10.5, th.text2, R, "lm");
     }
 }

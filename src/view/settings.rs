@@ -166,7 +166,15 @@ pub(crate) fn draw_settings(
             }
             2 => toggle(c, th, hits, right, cy, startup, Hit::Startup),
             4 => toggle(c, th, hits, right, cy, cfg.plan_limits, Hit::PlanLimits),
-            5 => toggle(c, th, hits, right, cy, cfg.service_status, Hit::ServiceStatus),
+            5 => toggle(
+                c,
+                th,
+                hits,
+                right,
+                cy,
+                cfg.service_status,
+                Hit::ServiceStatus,
+            ),
             _ => {
                 let opts = [1000u32, 3000, 5000, 10000];
                 let sel = opts
