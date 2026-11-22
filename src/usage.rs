@@ -100,6 +100,8 @@ pub struct Stats {
     pub last: Option<DateTime<Utc>>,
     /// Plan limits from Anthropic (see `limits.rs`).
     pub limits: crate::limits::Snapshot,
+    /// Claude's service status (see `status.rs`).
+    pub service: crate::status::Snapshot,
 }
 
 impl Stats {
@@ -116,6 +118,14 @@ impl Stats {
             }
         }
         self.limits = snap;
+    }
+
+    /// Weekly percentage from Anthropic, if known (the last known one when
+    /// Anthropic can't be reached, as long as that week hasn't reset).
+    pub fn weekly_percent(&self) -> Option<f64> {
+        let l = self.limits.limits.as_ref()?;
+        let w = l.weekly.as_ref()?;
+        (w.resets_at > self.now).then_some(w.percent)
     }
 
     /// Session percentage from Anthropic, if known.
@@ -439,6 +449,7 @@ impl Store {
             active,
             last: recs.last().map(|r| r.t),
             limits: Default::default(),
+            service: Default::default(),
         }
     }
 }
@@ -532,6 +543,7 @@ pub fn sample_stats() -> Stats {
         active: 1,
         last: Some(now - Duration::seconds(20)),
         limits: Default::default(),
+        service: crate::status::sample(now),
     };
     s.apply_limits(crate::limits::sample(now));
     s

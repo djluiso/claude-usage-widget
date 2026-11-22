@@ -31,12 +31,14 @@ pub struct App {
     hits: Hits,
     last_scan: Option<Instant>,
     limits: crate::limits::Fetcher,
+    status: crate::status::Fetcher,
 }
 
 impl App {
     pub fn new(demo: bool) -> App {
         let cfg = ConfigFile::load();
         let limits = crate::limits::Fetcher::start(cfg.cfg.plan_limits && !demo);
+        let status = crate::status::Fetcher::start(cfg.cfg.service_status && !demo);
         let mut app = App {
             fonts: Fonts::load(),
             cfg,
@@ -47,6 +49,7 @@ impl App {
             hits: Vec::new(),
             last_scan: None,
             limits,
+            status,
         };
         app.tick();
         app
@@ -67,6 +70,7 @@ impl App {
             self.store.scan();
             self.stats = self.store.stats();
             self.stats.apply_limits(self.limits.snapshot());
+            self.stats.service = self.status.snapshot();
         }
         true
     }
@@ -87,19 +91,24 @@ impl App {
     /// Short text for the menu bar title / tray tooltip.
     pub fn summary(&self) -> (String, String) {
         let s = &self.stats;
-        if s.block_start.is_some() {
+        let (big, mut small) = if s.block_start.is_some() {
             (
                 fmt_tokens(s.block.all as f64),
                 format!("{} left", fmt_left(s.block_left)),
             )
         } else {
-            (fmt_tokens(s.today.all as f64), "idle · today".into())
+            (fmt_tokens(s.today.all as f64), "idle · today".to_string())
+        };
+        if let Some(p) = s.weekly_percent() {
+            small = format!("{small} · wk {p:.0}%");
         }
+        (big, small)
     }
 
     /// The drawer is about to open: ask for fresh plan limits.
     pub fn drawer_opening(&mut self) {
         self.limits.poke();
+        self.status.poke();
     }
 
     /// Render the drawer at scale `k`: premultiplied BGRA bytes plus the
@@ -157,6 +166,14 @@ impl App {
                 self.limits
                     .set_enabled(self.cfg.cfg.plan_limits && !self.demo);
                 self.last_scan = None; // show the change right away
+                self.tick();
+            }
+            Hit::ServiceStatus => {
+                self.cfg.cfg.service_status = !self.cfg.cfg.service_status;
+                self.cfg.save();
+                self.status
+                    .set_enabled(self.cfg.cfg.service_status && !self.demo);
+                self.last_scan = None;
                 self.tick();
             }
             Hit::Refresh(ms) => {

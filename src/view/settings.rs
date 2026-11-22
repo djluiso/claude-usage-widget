@@ -12,6 +12,7 @@ pub(crate) enum Hit {
     Dock(&'static str),
     Startup,
     PlanLimits,
+    ServiceStatus,
     Refresh(u32),
     OpenTranscripts,
     /// Open a tip/donation page in the browser.
@@ -26,7 +27,7 @@ pub(crate) type Hits = Vec<([f32; 4], Hit)>;
 pub(crate) const SETTINGS_BODY_H: f32 = GENERAL_H + 14.0 + PRICES_H + 14.0 + 24.0;
 const ROW_H: f32 = 52.0;
 /// The Position row (next to the Widgets button or the tray) is Windows-only.
-const GENERAL_ROWS: usize = if cfg!(windows) { 5 } else { 4 };
+const GENERAL_ROWS: usize = if cfg!(windows) { 6 } else { 5 };
 const GENERAL_H: f32 = 40.0 + GENERAL_ROWS as f32 * ROW_H;
 /// Models in the price table: the current generation.
 const PRICE_ROWS: [&str; 4] = ["fable-5-2", "opus-5-5", "sonnet-5-5", "haiku-5-5"];
@@ -102,7 +103,7 @@ pub(crate) fn draw_settings(
         },
         "Launch automatically when you sign in",
     );
-    let all_rows: [(usize, &str, &str); 5] = [
+    let all_rows: [(usize, &str, &str); 6] = [
         (0, "Theme", theme_desc),
         (1, "Position", "Where the readout sits on the taskbar"),
         (2, startup_row.0, startup_row.1),
@@ -111,6 +112,11 @@ pub(crate) fn draw_settings(
             4,
             "Plan limits from Anthropic",
             "Session and weekly limits, as /usage shows. Uses your Claude Code login.",
+        ),
+        (
+            5,
+            "Claude status",
+            "Service status from status.claude.com. Public, no login sent.",
         ),
     ];
     let rows = all_rows.iter().filter(|r| cfg!(windows) || r.0 != 1);
@@ -160,6 +166,7 @@ pub(crate) fn draw_settings(
             }
             2 => toggle(c, th, hits, right, cy, startup, Hit::Startup),
             4 => toggle(c, th, hits, right, cy, cfg.plan_limits, Hit::PlanLimits),
+            5 => toggle(c, th, hits, right, cy, cfg.service_status, Hit::ServiceStatus),
             _ => {
                 let opts = [1000u32, 3000, 5000, 10000];
                 let sel = opts

@@ -91,6 +91,8 @@ struct App {
     demo: bool,
     /// Plan limits from Anthropic, fetched in the background.
     limits: crate::limits::Fetcher,
+    /// Claude's service status, fetched in the background.
+    status: crate::status::Fetcher,
     fonts: Fonts,
     theme: &'static Theme,     // panel (user setting)
     bar_theme: &'static Theme, // readout (matches the taskbar)
@@ -196,6 +198,7 @@ pub fn run(opts: crate::Options) {
         let app = App {
             demo: opts.demo,
             limits: crate::limits::Fetcher::start(cfg.cfg.plan_limits && !opts.demo),
+            status: crate::status::Fetcher::start(cfg.cfg.service_status && !opts.demo),
             fonts: Fonts::load(),
             theme: resolve_theme(&cfg.cfg.theme),
             bar_theme: taskbar_theme(),
@@ -254,6 +257,7 @@ impl App {
             self.store.scan();
             let mut stats = self.store.stats();
             stats.apply_limits(self.limits.snapshot());
+            stats.service = self.status.snapshot();
             self.stats = Some(stats);
         }
         self.render_readout();
@@ -414,6 +418,7 @@ impl App {
         }
         self.backdrop = None;
         self.limits.poke(); // fresh plan limits when the drawer opens
+        self.status.poke();
         self.render_panel(); // sizes the panel
         let (x_open, y, x_closed) = self.panel_target();
         self.capture_backdrop(x_open, y);

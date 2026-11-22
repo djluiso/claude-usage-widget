@@ -17,6 +17,8 @@ pub struct Config {
     pub refresh_ms: u32,
     /// Ask Anthropic for the plan limits `/usage` shows (session, weekly).
     pub plan_limits: bool,
+    /// Show Claude's service status from status.claude.com.
+    pub service_status: bool,
 }
 
 impl Default for Config {
@@ -26,6 +28,7 @@ impl Default for Config {
             theme: "system".into(),
             refresh_ms: 3000,
             plan_limits: true,
+            service_status: true,
         }
     }
 }

@@ -80,6 +80,13 @@ impl App {
                 self.limits.set_enabled(on && !self.demo);
                 self.tick();
             }
+            Some(Hit::ServiceStatus) => {
+                let on = !self.cfg.cfg.service_status;
+                self.cfg.cfg.service_status = on;
+                self.cfg.save();
+                self.status.set_enabled(on && !self.demo);
+                self.tick();
+            }
             Some(Hit::OpenTranscripts) => crate::platform::open_folder(&config::projects_dir()),
             Some(Hit::Tip(url)) => crate::platform::open_url(url),
             Some(Hit::Quit) => self.handle_menu(M_QUIT),

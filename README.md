@@ -258,15 +258,43 @@ How it works, and what it touches:
 - It sends one request to Anthropic (`api.anthropic.com/api/oauth/usage`)
   every 5 minutes and when you open the drawer. The login is sent only to
   Anthropic and never stored by the widget.
-- It never renews the login itself, so it can't sign Claude Code out. If the
-  login has expired, the widget waits until Claude Code renews it.
+- When the saved login has expired (for example because you only use Claude
+  Code in Claude Desktop, which keeps its own login), the widget renews it
+  the way Claude Code does and saves the new tokens back for Claude Code. It
+  takes Claude Code's own refresh lock first and re-reads the login under it,
+  so the two never renew at the same time. (Windows and Linux; on macOS the
+  widget still waits for Claude Code to renew it.)
 - That request is the one `/usage` makes. Anthropic doesn't document it, so it
   may change; the widget then falls back to the local estimate.
+- The last good numbers (percentages and reset times, never the login) are
+  saved to `limits-cache.json` in the widget's data folder, so the drawer and
+  readout show the last known limits, marked "last known", while Anthropic
+  can't be reached.
+- With the numbers in hand, the taskbar readout also shows the weekly limit:
+  a softer inner ring inside the session ring, and "wk 24%" after the time
+  left (the macOS menu bar and Linux tray tooltip show the same text).
 
-Turn it off under **Settings → Plan limits from Anthropic**; the widget then
-makes no network requests at all. To check it from a terminal, run
+To check it from a terminal, run
 `claude-usage-widget --check-limits`. It prints your current percentages
 (never the login).
+
+### Claude status
+
+The drawer's **Claude status** card shows the state of Claude's services from
+[status.claude.com](https://status.claude.com): the overall status, claude.ai,
+Claude Code, the API, Cowork and the Console (plus any other service while it
+has a problem), and open incidents. Click the card to open the status page.
+While something is wrong, a small coloured dot also appears on the readout's
+ring.
+
+It asks the public status page (`status.claude.com/api/v2/summary.json`) every
+2 minutes and when you open the drawer; nothing about you is sent. The last
+good reading is saved to `status-cache.json`, so if the check fails the card
+shows the last known status with its age instead of going blank.
+
+Turn these off under **Settings → Plan limits from Anthropic** and
+**Settings → Claude status**; with both off, the widget makes no network
+requests at all.
 
 ## Prices
 

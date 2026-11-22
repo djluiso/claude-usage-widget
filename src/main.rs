@@ -13,6 +13,7 @@ mod draw;
 mod limits;
 mod platform;
 mod pricing;
+mod status;
 mod usage;
 mod view;
 

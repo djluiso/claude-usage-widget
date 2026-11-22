@@ -65,6 +65,32 @@ pub(crate) const LIGHT: Theme = Theme {
     cat: [hex(0x2a78d6), hex(0xeb6834), hex(0x1baf7a), hex(0xeda100)],
 };
 
+/// Colour for a service status level (green / blue / amber / orange / red).
+pub(crate) fn level_color(th: &Theme, l: crate::status::Level) -> Rgba {
+    use crate::status::Level::*;
+    match l {
+        Operational => th.good,
+        Maintenance => th.cat[0],
+        Degraded => th.cat[3],
+        Partial => th.cat[1],
+        Major => hex(0xd93b3b),
+    }
+}
+
+/// Colour of the weekly-limit ring inside the session ring: a softer accent,
+/// so it reads as related to but distinct from the session ring.
+fn weekly_color(th: &Theme) -> Rgba {
+    [th.accent[0], th.accent[1], th.accent[2], 150]
+}
+
+/// The worst current status level, if something is wrong (for the small
+/// warning dot on the taskbar readout / status icon).
+fn status_alert(s: &Stats) -> Option<crate::status::Level> {
+    let sv = s.service.service.as_ref()?;
+    let l = sv.worst();
+    (s.service.enabled && l != crate::status::Level::Operational).then_some(l)
+}
+
 /// Drawer theme: "dark" / "light" force it; anything else follows the
 /// system's light/dark setting.
 pub(crate) fn resolve_theme(setting: &str) -> &'static Theme {
@@ -103,6 +129,9 @@ pub(crate) fn draw_status_icon<'a>(
     c.ring(cx, cy, r, size * 0.13, s.block_frac, th.accent, th.track);
     let live = if s.live() { th.accent } else { th.text2 };
     c.spark(cx, cy, size * 0.24, live);
+    if let Some(l) = status_alert(s) {
+        c.circle(size * 0.84, size * 0.16, size * 0.16, level_color(th, l));
+    }
     if sparkline {
         let sx = size * 1.25;
         let n = s.spark.len() as f32;
@@ -134,11 +163,15 @@ pub(crate) fn draw_readout<'a>(
     } else {
         s.today.all
     } as f64);
-    let line2 = if s.block_start.is_some() {
+    let weekly = s.weekly_percent();
+    let mut line2 = if s.block_start.is_some() {
         format!("{} left", fmt_left(s.block_left))
     } else {
         "idle · today".into()
     };
+    if let Some(p) = weekly {
+        line2 = format!("{line2} · wk {p:.0}%");
+    }
     let probe = Canvas::new(1.0, 1.0, k, fonts);
     let tw = probe.tw(&line1, 13.0, SB).max(probe.tw(&line2, 11.0, R));
     let (ring_d, spark_w) = (28.0, 62.0);
@@ -152,8 +185,21 @@ pub(crate) fn draw_readout<'a>(
         c.rect(2.0, 4.0, w - 4.0, BAR_H - 8.0, th.hover, 5.0);
     }
     let (cx, cy) = (8.0 + ring_d / 2.0, BAR_H / 2.0);
+    // outer ring: the 5-hour session; inner ring: the weekly limit
     c.ring(cx, cy, ring_d / 2.0, 3.2, s.block_frac, th.accent, th.track);
-    c.spark(cx, cy, 6.2, if s.live() { th.accent } else { th.text3 });
+    let live = if s.live() { th.accent } else { th.text3 };
+    match weekly {
+        Some(p) => {
+            let frac = (p / 100.0).clamp(0.0, 1.0);
+            c.ring(cx, cy, 9.0, 2.6, frac, weekly_color(th), th.track);
+            c.spark(cx, cy, 4.4, live);
+        }
+        None => c.spark(cx, cy, 6.2, live),
+    }
+    if let Some(l) = status_alert(s) {
+        // something is wrong on status.claude.com
+        c.circle(cx + 10.5, cy - 10.5, 3.6, level_color(th, l));
+    }
     let tx = 8.0 + ring_d + 10.0;
     c.text(tx, cy - 1.0, &line1, 13.0, th.text1, SB, "ls");
     c.text(tx, cy + 3.0, &line2, 11.0, th.text2, R, "lt");
@@ -173,19 +219,24 @@ pub(crate) fn draw_readout<'a>(
     c
 }
 
-pub(crate) fn panel_layout(s: &Stats) -> (f32, usize, usize, [f32; 4], [f32; 4]) {
+pub(crate) fn panel_layout(s: &Stats) -> (f32, usize, usize, [f32; 4], [f32; 5]) {
     let nm = s.models.len().clamp(1, 3);
-    let ns = s.sessions.len().clamp(1, 4);
+    let status_h = status_height(s);
+    // one session row fewer when the status card is shown, to keep the
+    // drawer about the same height
+    let ns = s.sessions.len().clamp(1, if status_h > 0.0 { 3 } else { 4 });
     let left = [160.0, 156.0, 2.0 * 82.0 + 12.0, LIMITS_H];
     let right = [
         164.0,
         124.0,
         46.0 + 30.0 * nm as f32,
         46.0 + 38.0 * ns as f32,
+        status_h,
     ];
     let gap = 14.0;
     let lh: f32 = left.iter().sum::<f32>() + gap * 3.0;
-    let rh: f32 = right.iter().sum::<f32>() + gap * 3.0;
+    let rgaps = if status_h > 0.0 { 4.0 } else { 3.0 };
+    let rh: f32 = right.iter().sum::<f32>() + gap * rgaps;
     let body = lh.max(rh).max(settings::SETTINGS_BODY_H);
     ((72.0 + body + 44.0).floor(), nm, ns, left, right)
 }
@@ -251,6 +302,11 @@ pub(crate) fn draw_panel<'a>(
     models(&mut c, th, s, x, y, cw, right_h[2], nm);
     y += right_h[2] + gap;
     sessions(&mut c, th, s, x, y, cw, right_h[3], ns);
+    if right_h[4] > 0.0 {
+        y += right_h[3] + gap;
+        service_status(&mut c, th, s, x, y, cw, right_h[4]);
+        hits.push(([x, y, cw, right_h[4]], settings::Hit::Tip(crate::status::PAGE)));
+    }
     c.text(
         pad,
         h - 22.0,
@@ -410,7 +466,15 @@ const LIMITS_H: f32 = 150.0;
 fn plan_limits(c: &mut Canvas, th: &Theme, s: &Stats, x: f32, y: f32, w: f32, h: f32) {
     use crate::limits::Status;
     let snap = &s.limits;
+    let stale = matches!(
+        snap.status,
+        Status::Failed(_) | Status::Expired | Status::NoLogin
+    );
     let sub = match &snap.status {
+        _ if stale && snap.limits.is_some() => {
+            let at = snap.limits.as_ref().map_or(s.now, |l| l.fetched_at);
+            format!("last known · {}", fmt_ago((s.now - at).num_seconds()))
+        }
         Status::Ok | Status::Loading if snap.limits.is_some() => {
             let at = snap.limits.as_ref().map(|l| l.fetched_at);
             match at {
@@ -437,8 +501,8 @@ fn plan_limits(c: &mut Canvas, th: &Theme, s: &Stats, x: f32, y: f32, w: f32, h:
                 "to see your session and weekly limits here.",
             ],
             Status::Expired => &[
-                "Claude Code's saved login has expired. It renews",
-                "the next time you use Claude Code.",
+                "Claude Code's saved login has expired and couldn't",
+                "be renewed. Sign in to Claude Code again.",
             ],
             Status::Loading => &["Asking Anthropic for your plan limits…"],
             _ => &[
@@ -499,6 +563,79 @@ fn plan_limits(c: &mut Canvas, th: &Theme, s: &Stats, x: f32, y: f32, w: f32, h:
         let t = format!("This week: {}", parts.join("  ·  "));
         let t = c.fit(&t, 10.0, R, w - 32.0);
         c.text(lx, y + h - 20.0, &t, 10.0, th.text3, R, "lm");
+    }
+}
+
+/// Columns of the service row in the status card.
+const STATUS_COLS: usize = 5;
+
+/// Height of the "Claude status" card (0 when it's turned off).
+fn status_height(s: &Stats) -> f32 {
+    if !s.service.enabled {
+        return 0.0;
+    }
+    let (rows, inc) = match &s.service.service {
+        Some(sv) => (
+            sv.components.len().div_ceil(STATUS_COLS).max(1),
+            sv.incidents.len().min(2),
+        ),
+        None => (1, 0),
+    };
+    60.0 + 20.0 * rows as f32 + 18.0 * inc as f32 + 14.0
+}
+
+/// "Claude status": the overall state from status.claude.com, the main
+/// services, and open incidents. Clicking it opens the status page. When the
+/// live check fails it shows the last known reading, with its age.
+fn service_status(c: &mut Canvas, th: &Theme, s: &Stats, x: f32, y: f32, w: f32, h: f32) {
+    let snap = &s.service;
+    let ago = |sv: &crate::status::Service| fmt_ago((s.now - sv.fetched_at).num_seconds());
+    let sub = match (&snap.service, &snap.error) {
+        (Some(sv), None) => format!("status.claude.com · {}", ago(sv)),
+        (Some(sv), Some(_)) => format!("last known · {}", ago(sv)),
+        (None, Some(e)) => format!("couldn't update ({e})"),
+        (None, None) => "checking…".into(),
+    };
+    card(c, th, x, y, w, h, "Claude status", Some(&sub));
+    let Some(sv) = &snap.service else {
+        let msg = if snap.error.is_some() {
+            "Couldn't reach status.claude.com. Click to open it."
+        } else {
+            "Checking status.claude.com…"
+        };
+        c.text(x + 16.0, y + 47.0, msg, 11.0, th.text3, R, "lm");
+        return;
+    };
+    let worst = sv.worst();
+    let desc = if sv.description.is_empty() {
+        worst.label().to_string()
+    } else {
+        sv.description.clone()
+    };
+    c.circle(x + 21.0, y + 47.0, 4.5, level_color(th, worst));
+    let desc = c.fit(&desc, 12.0, SB, w - 48.0);
+    c.text(x + 32.0, y + 47.0, &desc, 12.0, th.text1, SB, "lm");
+    let colw = (w - 32.0) / STATUS_COLS as f32;
+    for (i, comp) in sv.components.iter().enumerate() {
+        let cx = x + 16.0 + (i % STATUS_COLS) as f32 * colw;
+        let cy = y + 71.0 + (i / STATUS_COLS) as f32 * 20.0;
+        let ok = comp.level == crate::status::Level::Operational;
+        c.circle(cx + 4.0, cy, 3.0, level_color(th, comp.level));
+        let (ink, wt) = if ok { (th.text2, R) } else { (th.text1, SB) };
+        let name = c.fit(&comp.name, 10.5, wt, colw - 16.0);
+        c.text(cx + 12.0, cy, &name, 10.5, ink, wt, "lm");
+    }
+    let rows = sv.components.len().div_ceil(STATUS_COLS).max(1);
+    for (i, inc) in sv.incidents.iter().take(2).enumerate() {
+        let iy = y + 71.0 + rows as f32 * 20.0 + i as f32 * 18.0;
+        let stage = if inc.stage.is_empty() {
+            String::new()
+        } else {
+            format!("{}: ", inc.stage)
+        };
+        let t = c.fit(&format!("{stage}{}", inc.name), 10.5, R, w - 44.0);
+        c.rect(x + 16.0, iy - 5.0, 3.0, 10.0, level_color(th, inc.impact), 1.5);
+        c.text(x + 26.0, iy, &t, 10.5, th.text2, R, "lm");
     }
 }
 
