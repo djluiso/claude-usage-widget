@@ -108,7 +108,7 @@ jobs:
           screencapture -x preview/macos-settings.png
           kill %1 || true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: preview-${{ runner.os }}
           path: preview/
@@ -169,7 +169,7 @@ jobs:
           Compress-Archive -Path target\release\claude-usage-widget.exe, README.md, LICENSE `
             -DestinationPath "dist\ClaudeUsageWidget-${{ needs.version.outputs.version }}-portable.zip"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: dist-windows
           path: dist/*
@@ -188,7 +188,7 @@ jobs:
       - name: Build app and .dmg
         run: bash installer/macos/build-app.sh "${{ needs.version.outputs.version }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: dist-macos
           path: dist/*.dmg
@@ -217,7 +217,7 @@ jobs:
              assets/icon.png README.md LICENSE "$t/"
           tar czf "dist/$t.tar.gz" "$t"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: dist-linux
           path: dist/*
@@ -226,7 +226,7 @@ jobs:
     needs: [version, build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           pattern: dist-*
           path: dist
