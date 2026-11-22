@@ -279,11 +279,15 @@ fn macos(fonts: &Fonts, th: &'static Theme, s: &Stats, light: bool, path: &Path)
 
     let bar_th: &Theme = if light { &LIGHT } else { &DARK };
     let icon = draw_status_icon(fonts, bar_th, s, k, 16.0, true);
-    let title = format!(
+    // same text as the real menu-bar title (App::summary)
+    let mut title = format!(
         "{} · {} left",
         fmt_tokens(s.block.all as f64),
         fmt_left(s.block_left)
     );
+    if let Some(p) = s.weekly_percent() {
+        title = format!("{title} · wk {p:.0}%");
+    }
     let tw = c.tw(&title, 13.0, R);
     let iw = icon.pm.width() as f32 / k;
     let item_w = 8.0 + iw + 6.0 + tw + 8.0;

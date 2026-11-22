@@ -29,26 +29,35 @@ runtime to install.
 
 - **Readout:** on the Windows taskbar (next to the Widgets button, or by the
   tray), in the macOS menu bar, or in the Linux tray. It shows:
-  - a ring for how much of the 5-hour usage window has passed
-  - tokens used in the window and the time left until it resets
+  - a double ring: the outer ring for the 5-hour session, the softer inner
+    ring for the weekly limit
+  - tokens used in the window, the time left until it resets, and the weekly
+    percentage (`2h 42m left · wk 24%`)
   - a sparkline of output tokens over the last 60 minutes (Windows and macOS)
+  - a small coloured dot on the ring while status.claude.com reports a problem
 - **Drawer:** click the readout to open it. It shows:
   - a gauge for the 5-hour window and its activity chart
   - stat tiles: burn rate, last hour, today, and cache hit rate
+  - your plan limits: session, weekly and per-model weekly
   - cost per day for the last 7 days
   - today's token mix and usage per model
   - recent sessions
+  - Claude's service status: claude.ai, Claude Code, the API, Cowork and the
+    Console, plus open incidents
 
   The gear button at its top right switches the drawer to **Settings**.
 
 - **Plan limits:** your real session and weekly limits, the same numbers
   Claude Code's `/usage` shows. They include usage on your phone, the web and
   other computers.
+- **Works offline:** the last known limits and status are kept on disk, so the
+  widget shows them (marked "last known") when it can't reach the network.
 
 Token counts, costs and charts come from Claude Code's local transcripts
 (`~/.claude/projects/**/*.jsonl`, or `$CLAUDE_CONFIG_DIR/projects`). The plan
-limits come from Anthropic; see [Plan limits](#plan-limits) for exactly what
-that involves, and how to turn it off.
+limits come from Anthropic and the service status from status.claude.com; see
+[Plan limits](#plan-limits) and [Claude status](#claude-status) for exactly
+what that involves, and how to turn each off.
 
 ## Screenshots
 
@@ -72,7 +81,7 @@ press **Esc**, to go back:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/desktop-settings-dark.png">
-  <img src="docs/desktop-settings-light.png" alt="Windows 11 desktop with the drawer showing Settings: theme, position, start with Windows, refresh interval and the built-in price table">
+  <img src="docs/desktop-settings-light.png" alt="Windows 11 desktop with the drawer showing Settings: theme, position, start with Windows, refresh interval, plan limits and Claude status switches, and the built-in price table">
 </picture>
 
 ### macOS
@@ -214,8 +223,9 @@ Click the gear at the drawer's top right. Changes are saved as you make them.
 
 - **General:** theme, position (Windows only: next to the Widgets button or
   the tray icons), **Start with Windows** / **Start at login**, the refresh
-  interval (1, 3, 5 or 10 seconds), and
-  [Plan limits from Anthropic](#plan-limits).
+  interval (1, 3, 5 or 10 seconds),
+  [Plan limits from Anthropic](#plan-limits), and
+  [Claude status](#claude-status).
 - **Prices:** a read-only table of the built-in prices (see below).
 - **Open transcripts folder** and **Quit widget**.
 
@@ -231,9 +241,14 @@ Settings are stored in `config.json` in:
   "dock": "left",
   "theme": "system",
   "refresh_ms": 3000,
-  "plan_limits": true
+  "plan_limits": true,
+  "service_status": true
 }
 ```
+
+The same folder holds `limits-cache.json` and `status-cache.json`, the last
+good plan limits and service status (see below). Deleting them is safe; they
+are rewritten on the next successful check.
 
 ## Plan limits
 
@@ -403,6 +418,11 @@ The same links are at the bottom of the widget's **Settings**. **Bitcoin** opens
   responses by message ID. Without [plan limits](#plan-limits), it estimates
   the 5-hour window from message timing, so the reset time may differ from
   Anthropic's own.
+- **Network:** two background checks, each on its own thread and each with a
+  Settings switch: plan limits from Anthropic every 5 minutes, and the public
+  status page every 2 minutes. Both also run when the drawer opens (at most
+  once a minute and once every 30 seconds). The last good reply of each is
+  cached on disk and shown, with its age, when a check fails.
 - **Placement:** the readout is a separate borderless window that sits on top
   of the taskbar. Windows 11 has no public API for adding items to the taskbar.
   The widget finds the Widgets button through UI Automation and sets the
